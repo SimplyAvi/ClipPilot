@@ -1,0 +1,430 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum ProjectStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETE
+  ARCHIVED
+}
+
+enum AssetType {
+  MUSIC
+  VOICE
+  IMAGE
+  VIDEO
+  AUDIO
+  AI_GENERATED
+  FOOTAGE
+}
+
+enum LicenseType {
+  CC0
+  CC_BY
+  CC_BY_SA
+  CC_BY_NC
+  PIXABAY
+  ROYALTY_FREE
+  ELEVENLABS_COMMERCIAL
+  RUNWAY_COMMERCIAL
+  LICENSED
+  GENERATED
+  UNKNOWN
+}
+
+enum JobType {
+  SCRIPT_PARSE
+  IMAGE_GENERATE
+  VIDEO_GENERATE
+  VOICE_GENERATE
+  MUSIC_SELECT
+  VIDEO_ASSEMBLE
+  CONTENT_ID_CHECK
+  SCENE_GENERATE
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETE
+  FAILED
+  CANCELLED
+  PAUSED
+}
+
+enum SceneStatus {
+  DRAFT
+  ASSETS_READY
+  RENDERED
+}
+
+enum ShotStatus {
+  DRAFT
+  GENERATING
+  COMPLETE
+  FAILED
+  NEEDS_REVIEW
+}
+
+enum DialogueStatus {
+  PENDING
+  GENERATING
+  COMPLETE
+  FAILED
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+// Key-value store for runtime configuration (API keys etc.) saved via the Settings UI.
+model AppSetting {
+  key       String   @id
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
+}
+
+// Encrypted provider API keys saved via the Settings UI.
+model ProviderKey {
+  id           String    @id @default(cuid())
+  provider     String    @unique
+  encryptedKey String    @db.Text
+  isVerified   Boolean   @default(false)
+  lastTestedAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Project {
+  id        String        @id @default(cuid())
+  name      String
+  status    ProjectStatus @default(DRAFT)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  scripts        Script[]
+  assets         Asset[]
+  jobs           Job[]
+  scenes         Scene[]
+  characters     Character[]
+  exports        Export[]
+  transcription  Transcription?
+  thumbnails     ProjectThumbnail[]
+}
+
+model Character {
+  id               String   @id @default(cuid())
+  projectId        String
+
+  // Identity — must be entirely fictional
+  name             String
+  ageAppearance    Int?            // 18–80
+  description      String?  @db.Text  // physical description for image prompts
+  personalityNotes String?  @db.Text  // used for dialogue direction
+
+  // Voice configuration
+  elevenLabsVoiceId String?
+  voiceName         String?         // display label of the chosen ElevenLabs voice
+  speakingPace      String  @default("normal")    // slow | normal | fast
+  emotionalRange    String  @default("moderate")  // restrained | moderate | expressive
+  accent            String?
+
+  // Compliance acknowledgement — user must confirm character is fictional
+  confirmedFictional Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  dialogueLines DialogueLine[]
+
+  @@index([projectId])
+}
+
+model Script {
+  id         String   @id @default(cuid())
+  projectId  String
+  content    String   @db.Text
+  parsedData Json?
+  createdAt  DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Asset {
+  id String @id @default(cuid())
+
+  // projectId is null for global library assets, set for project-specific assets
+  projectId String?
+
+  name                 String
+  type                 AssetType
+  sourceName           String
+  sourceUrl            String?
+  licenseType          LicenseType
+  licenseUrl           String?
+  licenseScreenshotUrl String?
+
+  // Nullable = unknown/not yet verified
+  commercialUse       Boolean?
+  monetizationAllowed Boolean?
+
+  attributionRequired Boolean @default(false)
+  attributionText     String?
+
+  // Content ID (music only)
+  contentIdChecked Boolean @default(false)
+  contentIdClear   Boolean @default(false)
+
+  notes     String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project   Project?        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  musicCues SceneMusicCue[]
+
+  @@index([projectId])
+  @@index([type])
+}
+
+model Job {
+  id            String    @id @default(cuid())
+  projectId     String
+  type          JobType
+  status        JobStatus @default(PENDING)
+  progress      Int       @default(0)
+  costSoFar     Float     @default(0)
+  estimatedCost Float?
+  error         String?   @db.Text
+
+  // Checkpoint — stores { lastCompletedShotId, completedShotIds, config } for resume
+  metadata      Json?
+  totalShots    Int       @default(0)
+  completedShots Int      @default(0)
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Scene {
+  id          String      @id @default(cuid())
+  projectId   String
+  sceneNumber Int
+  title       String
+  location    String?
+  timeOfDay   String?
+  status      SceneStatus @default(DRAFT)
+  createdAt   DateTime    @default(now())
+
+  project  Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  shots    Shot[]
+  musicCue SceneMusicCue?
+}
+
+model Shot {
+  id                 String     @id @default(cuid())
+  sceneId            String
+  shotNumber         Int
+  shotType           String
+  duration           Float      @default(3.0)
+  generatedVideoPath String?
+  thumbnailPath      String?
+  status             ShotStatus @default(DRAFT)
+
+  // Prompt used for generation
+  prompt             String?    @db.Text
+
+  // Likeness compliance check
+  likenessChecked    Boolean    @default(false)
+  likenessCheckPassed Boolean?
+  likenessMatchedName String?   // name of person flagged (if any)
+  likenessScore      Float?     // similarity score 0–1
+  flaggedReason      String?    @db.Text
+
+  // Cost tracking per shot
+  generationCostUsd  Float?
+
+  // Audio pipeline (Phase 6)
+  mixedAudioPath     String?    // R2 key: full dialogue+music mix
+  dialogueStemPath   String?    // R2 key: dialogue-only stem
+  musicStemPath      String?    // R2 key: music-only stem (under this shot)
+  lipSyncedVideoPath String?    // R2 key: lip-synced version
+  lipSyncStatus      String?    // PENDING | COMPLETE | FAILED
+
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  scene         Scene          @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  dialogueLines DialogueLine[]
+}
+
+// ─── Phase 6: Audio pipeline models ──────────────────────────────────────────
+
+model DialogueLine {
+  id                String        @id @default(cuid())
+  shotId            String
+  characterId       String?
+  lineIndex         Int           // display order within the shot (0-based)
+
+  text              String        @db.Text
+  deliveryDirection String?       @db.Text   // acting note, e.g. "quietly, with fear"
+
+  // Generated audio
+  audioPath         String?       // R2 key
+  startTimeSec      Float?        // position in scene timeline
+  endTimeSec        Float?
+  durationSec       Float?
+  status            DialogueStatus @default(PENDING)
+
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  shot      Shot       @relation(fields: [shotId], references: [id], onDelete: Cascade)
+  character Character? @relation(fields: [characterId], references: [id])
+
+  @@index([shotId])
+}
+
+// ─── Phase 7: Assembly & Export ───────────────────────────────────────────────
+
+enum ExportPlatform {
+  YOUTUBE_SHORTS
+  INSTAGRAM_REELS
+  TIKTOK
+  YOUTUBE_STANDARD
+}
+
+enum ExportStatus {
+  PENDING
+  ASSEMBLING
+  COMPLETE
+  FAILED
+}
+
+model Export {
+  id          String         @id @default(cuid())
+  projectId   String
+  platform    ExportPlatform
+  status      ExportStatus   @default(PENDING)
+  error       String?        @db.Text
+
+  // Output files (R2 keys)
+  videoR2Key  String?        // assembled + encoded video
+  pdfR2Key    String?        // provenance report PDF
+
+  // Metadata baked at export time
+  durationSec   Float?
+  fileSizeBytes Int?
+  complianceSnapshot Json?   // snapshot of all compliance checks at export time
+  aiDisclosureApplied Boolean @default(false)
+  disclosureTimestamp DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model SceneMusicCue {
+  id            String   @id @default(cuid())
+  sceneId       String   @unique
+  assetId       String
+
+  startPointSec Float    @default(0)     // offset into the music track
+  fadeInSec     Float    @default(2)
+  fadeOutSec    Float    @default(3)
+  volumeDb      Float    @default(-12)   // attenuation under dialogue
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  scene Scene @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  asset Asset @relation(fields: [assetId], references: [id])
+}
+
+// ─── Phase 9: Captions & Subtitles ───────────────────────────────────────────
+
+model Transcription {
+  id          String   @id @default(cuid())
+  projectId   String   @unique
+
+  // Whisper response metadata
+  language    String?          // ISO language code detected by Whisper
+  durationSec Float?           // total audio duration
+  rawResponse Json             // full Whisper verbose_json response for re-processing
+
+  // Caption style saved per project
+  captionStyle Json?           // { fontSize, fontColor, backgroundColor, position, fontFamily }
+
+  segments    CaptionSegment[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model CaptionSegment {
+  id              String   @id @default(cuid())
+  transcriptionId String
+  index           Int              // display order (0-based)
+  startSec        Float
+  endSec          Float
+  text            String   @db.Text
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  transcription Transcription @relation(fields: [transcriptionId], references: [id], onDelete: Cascade)
+
+  @@index([transcriptionId])
+}
+
+// ─── Phase 10: Thumbnails ─────────────────────────────────────────────────────
+
+enum ThumbnailVariant {
+  IMPACT_FRAME
+  CHARACTER_FOCUS
+  MOOD_ATMOSPHERE
+}
+
+model ProjectThumbnail {
+  id        String           @id @default(cuid())
+  projectId String
+
+  variant   ThumbnailVariant
+  isSelected Boolean         @default(false)  // only one should be true per project
+
+  // R2 keys for each platform size
+  youtubeR2Key  String?   // 1280×720
+  tiktokR2Key   String?   // 1080×1920
+  squareR2Key   String?   // 1080×1080
+
+  // Text overlay settings saved with this variant
+  titleText      String?
+  fontSize       String   @default("large")    // small | medium | large
+  textColor      String   @default("white")
+  textPosition   String   @default("bottom")   // bottom | center | top
+  textStyle      String   @default("shadow")   // plain | bold | shadow | outline
+
+  // Generation metadata
+  baseFramePath  String?   // R2 key of the source extracted frame (Impact Frame only)
+  prompt         String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
