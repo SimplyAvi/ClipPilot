@@ -116,6 +116,7 @@ model Project {
   exports        Export[]
   transcription  Transcription?
   thumbnails     ProjectThumbnail[]
+  posts          SocialPost[]
 }
 
 model Character {
@@ -425,6 +426,36 @@ model ProjectThumbnail {
   updatedAt DateTime @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+// ─── Phase 11: Social Media Upload ────────────────────────────────────────────
+
+model SocialAccount {
+  id                    String    @id @default(cuid())
+  platform              String    @unique    // youtube | tiktok | instagram
+  username              String
+  platformUserId        String?              // channel ID, open_id, ig_user_id
+  encryptedAccessToken  String    @db.Text
+  encryptedRefreshToken String?   @db.Text
+  tokenExpiresAt        DateTime?
+  isConnected           Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
+
+model SocialPost {
+  id             String   @id @default(cuid())
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  platform       String
+  platformPostId String
+  postUrl        String
+  title          String
+  caption        String   @db.Text
+  publishedAt    DateTime @default(now())
+  status         String   @default("published")
 
   @@index([projectId])
 }

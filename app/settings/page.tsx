@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { getEnvStatus } from "@/lib/env-status";
 import { SettingsTabs } from "./_components/settings-tabs";
 
@@ -18,7 +19,10 @@ export default function SettingsPage() {
           Configure API keys, storage, and compliance preferences.
         </p>
       </div>
-      <SettingsTabs envStatus={envStatus} />
+      {/* Suspense required because SettingsTabs + ConnectedAccountsTab use useSearchParams() */}
+      <Suspense fallback={<div className="h-10 animate-pulse rounded-md bg-muted" />}>
+        <SettingsTabs envStatus={envStatus} />
+      </Suspense>
     </div>
   );
 }

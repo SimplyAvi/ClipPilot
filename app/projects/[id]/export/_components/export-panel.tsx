@@ -14,6 +14,7 @@ import {
   Loader2,
   Film,
   ShieldCheck,
+  Share2,
 } from "lucide-react";
 // ─── Platform checklist (inlined from final-assembler for client-safe use) ────
 function getPlatformChecklist(platform: Platform, projectName: string): string {
@@ -602,6 +603,39 @@ export default function ExportPanel({
 
       {/* Active download */}
       {activeDownload && <DownloadCard detail={activeDownload} />}
+
+      {/* Publish Directly */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Share2 className="h-4 w-4 text-muted-foreground" />
+            Publish Directly
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Upload your exported video straight to a platform — no manual download needed.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                { platform: "youtube", label: "YouTube", color: "bg-red-600" },
+                { platform: "tiktok", label: "TikTok", color: "bg-black" },
+                { platform: "instagram", label: "Instagram", color: "bg-gradient-to-r from-purple-600 to-pink-500" },
+              ] as const
+            ).map(({ platform: p, label, color }) => (
+              <a
+                key={p}
+                href={`/projects/${projectId}/publish?platform=${p}`}
+                className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 ${color}`}
+              >
+                <Share2 className="h-3.5 w-3.5" />
+                {label}
+              </a>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Export history */}
       {exports.length > 0 && (

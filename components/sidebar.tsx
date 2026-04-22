@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { FolderOpen, Image, Plus, Settings, Video, Captions, ImageIcon } from "lucide-react";
+import { FolderOpen, Image, Plus, Settings, Video, Captions, ImageIcon, Share2 } from "lucide-react";
 
 const navItems = [
   {
@@ -101,6 +101,18 @@ export function Sidebar() {
             >
               <ImageIcon className="h-4 w-4" />
               Thumbnails
+            </Link>
+            <Link
+              href={`/projects/${projectId}/publish`}
+              className={cn(
+                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                pathname.startsWith(`/projects/${projectId}/publish`)
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              )}
+            >
+              <Share2 className="h-4 w-4" />
+              Publish
             </Link>
           </div>
         )}
