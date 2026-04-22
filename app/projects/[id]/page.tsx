@@ -3,7 +3,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Clapperboard, Users, Music, ShieldCheck, Upload, Captions, Image as ImageIcon, Share2 } from "lucide-react";
+import { ArrowLeft, Clapperboard, Users, Music, ShieldCheck, Upload, Captions, Image as ImageIcon, Share2, History } from "lucide-react";
 
 const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   DRAFT: { label: "Draft", variant: "secondary" },
@@ -93,6 +93,12 @@ export default async function ProjectPage({ params }: { params: { id: string } }
             <Link href={`/projects/${project.id}/publish`}>
               <Share2 className="mr-2 h-4 w-4" />
               Publish
+            </Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href={`/projects/${project.id}/versions`}>
+              <History className="mr-2 h-4 w-4" />
+              Versions
             </Link>
           </Button>
         </div>

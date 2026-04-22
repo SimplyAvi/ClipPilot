@@ -1,19 +1,31 @@
+/**
+ * /api/projects
+ * GET  — list all projects with rich dashboard data
+ * POST — create a new project
+ */
+
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { z } from "zod";
 
-const createProjectSchema = z.object({
-  name: z.string().min(1, "Project name is required").max(100),
-});
-
 export async function GET() {
   try {
     const projects = await db.project.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 20,
+      orderBy: { updatedAt: "desc" },
       include: {
         _count: {
-          select: { scenes: true, assets: true, jobs: true },
+          select: { scenes: true, assets: true, jobs: true, posts: true },
+        },
+        scripts: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { id: true, createdAt: true },
+        },
+        exports: {
+          where: { status: "COMPLETE" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { id: true, platform: true, createdAt: true },
         },
       },
     });
@@ -21,9 +33,17 @@ export async function GET() {
     return NextResponse.json({ data: projects, error: null });
   } catch (error) {
     console.error("[GET /api/projects]", error);
-    return NextResponse.json({ data: null, error: "Failed to fetch projects" }, { status: 500 });
+    return NextResponse.json(
+      { data: null, error: "Failed to fetch projects" },
+      { status: 500 }
+    );
   }
 }
+
+const createProjectSchema = z.object({
+  name: z.string().min(1, "Project name is required").max(100),
+  platform: z.string().optional(),
+});
 
 export async function POST(request: Request) {
   try {
@@ -38,12 +58,18 @@ export async function POST(request: Request) {
     }
 
     const project = await db.project.create({
-      data: { name: parsed.data.name },
+      data: {
+        name: parsed.data.name,
+        platform: parsed.data.platform ?? null,
+      },
     });
 
     return NextResponse.json({ data: project, error: null }, { status: 201 });
   } catch (error) {
     console.error("[POST /api/projects]", error);
-    return NextResponse.json({ data: null, error: "Failed to create project" }, { status: 500 });
+    return NextResponse.json(
+      { data: null, error: "Failed to create project" },
+      { status: 500 }
+    );
   }
 }

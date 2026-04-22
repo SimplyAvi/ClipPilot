@@ -11,8 +11,13 @@ datasource db {
 
 enum ProjectStatus {
   DRAFT
+  SCRIPT_ANALYZING
+  PLANNING
+  GENERATING
+  ASSEMBLING
   IN_PROGRESS
   COMPLETE
+  PUBLISHED
   ARCHIVED
 }
 
@@ -105,6 +110,10 @@ model Project {
   id        String        @id @default(cuid())
   name      String
   status    ProjectStatus @default(DRAFT)
+  platform  String?       // youtube | tiktok | instagram | youtube_shorts
+  thumbnailPath String?   // R2 key of selected thumbnail (denormalized for fast list queries)
+  completedAt   DateTime?
+  archivedAt    DateTime?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
@@ -117,6 +126,7 @@ model Project {
   transcription  Transcription?
   thumbnails     ProjectThumbnail[]
   posts          SocialPost[]
+  versions       ProjectVersion[]
 }
 
 model Character {
@@ -456,6 +466,22 @@ model SocialPost {
   caption        String   @db.Text
   publishedAt    DateTime @default(now())
   status         String   @default("published")
+
+  @@index([projectId])
+}
+
+// ─── Phase 12: Project Version History ───────────────────────────────────────
+
+model ProjectVersion {
+  id             String   @id @default(cuid())
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versionNumber  Int
+  label          String
+  scriptSnapshot String   @db.Text
+  configSnapshot String   @db.Text   // JSON: { name, platform, status }
+  createdAt      DateTime @default(now())
+  createdBy      String   @default("user")
 
   @@index([projectId])
 }
