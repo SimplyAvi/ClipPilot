@@ -16,6 +16,7 @@ import {
   History,
   ChevronDown,
   ChevronRight,
+  LayoutTemplate,
 } from "lucide-react";
 
 // ─── Status dot colours (matches project-dashboard.tsx) ───────────────────────
@@ -41,6 +42,7 @@ interface RecentProject {
 
 const navItems = [
   { label: "Projects", href: "/", icon: FolderOpen },
+  { label: "Templates", href: "/templates", icon: LayoutTemplate },
   { label: "Assets", href: "/assets", icon: Image },
   { label: "Settings", href: "/settings", icon: Settings },
 ];

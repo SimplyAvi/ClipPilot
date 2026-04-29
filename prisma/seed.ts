@@ -12,6 +12,7 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+import { seedTemplates } from "./seeds/templates";
 
 const db = new PrismaClient();
 
@@ -187,6 +188,8 @@ async function main() {
   }
 
   console.log(`\nSeeded ${MUSIC_SEEDS.length} music library assets.`);
+
+  await seedTemplates(db);
 }
 
 main()

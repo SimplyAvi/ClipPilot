@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Search,
   MoreVertical,
@@ -19,6 +20,10 @@ import {
   AlertTriangle,
   Loader2,
   ArchiveRestore,
+  BookTemplate,
+  Sparkles,
+  ArrowRight,
+  CheckCircle2,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -37,9 +42,19 @@ export interface DashboardProject {
   exports: { id: string; platform: string; createdAt: string }[];
 }
 
+export interface QuickStartTemplate {
+  id: string;
+  name: string;
+  genre: string;
+  tone: string;
+  targetPlatform: string;
+  targetLength: string;
+}
+
 interface Props {
   initialProjects: DashboardProject[];
   thumbnailUrls: Record<string, string>; // projectId → signed URL
+  quickStartTemplates?: QuickStartTemplate[];
 }
 
 // ─── Status config ────────────────────────────────────────────────────────────
@@ -142,6 +157,134 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+// ─── Save as Template modal ───────────────────────────────────────────────────
+
+function SaveAsTemplateModal({
+  project,
+  onSaved,
+  onCancel,
+}: {
+  project: DashboardProject;
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(project.name);
+  const [description, setDescription] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    if (!name.trim()) { setError("Template name is required."); return; }
+    if (!description.trim()) { setError("Please add a description."); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          description: description.trim(),
+          genre: "drama",          // defaults — user can edit in /templates/[id]/edit
+          tone: "restrained",
+          visualStyle: "live-action-cinematic",
+          audioStyle: "sparse-piano",
+          targetPlatform: project.platform ?? "youtube-shorts",
+          targetLength: "medium",
+          sourceProjectId: project.id,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) { setError(json.error ?? "Save failed"); return; }
+      onSaved();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const INCLUDED = [
+    { label: "Genre and tone settings", saved: true },
+    { label: "Visual style settings", saved: true },
+    { label: "Audio style settings", saved: true },
+    { label: "Target platform", saved: true },
+    { label: "Target length", saved: true },
+    { label: "Character configuration (voice IDs, descriptions)", saved: true },
+    { label: "Music cue preferences", saved: true },
+    { label: "Generated assets", saved: false },
+    { label: "Script (templates are style, not story)", saved: false },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-lg rounded-xl border bg-card shadow-2xl">
+        {/* Header */}
+        <div className="border-b px-6 py-4">
+          <h2 className="text-lg font-bold">Save as Template</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Capture the style settings from <span className="font-semibold text-foreground">{project.name}</span>
+          </p>
+        </div>
+
+        <div className="px-6 py-5 space-y-5">
+          {/* Name */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium">Template Name</label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Template name" />
+          </div>
+
+          {/* Description */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium">Description</label>
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="What is this template best for? What genre / mood does it suit?"
+              rows={3}
+            />
+          </div>
+
+          {/* What gets saved */}
+          <div>
+            <p className="mb-2 text-sm font-medium">What gets saved</p>
+            <ul className="space-y-1.5">
+              {INCLUDED.map((item) => (
+                <li key={item.label} className="flex items-center gap-2 text-sm">
+                  {item.saved ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                  ) : (
+                    <span className="h-4 w-4 shrink-0 rounded-full border-2 border-muted-foreground/30" />
+                  )}
+                  <span className={item.saved ? "text-foreground" : "text-muted-foreground line-through"}>
+                    {item.label}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {error && (
+            <p className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
+            </p>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-2 border-t px-6 py-4">
+          <Button variant="outline" onClick={onCancel} disabled={saving}>Cancel</Button>
+          <Button onClick={handleSave} disabled={saving} className="gap-2">
+            {saving ? (
+              <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</>
+            ) : (
+              <><BookTemplate className="h-4 w-4" /> Save template</>
+            )}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Three-dot menu ───────────────────────────────────────────────────────────
 
 function ProjectMenu({
@@ -149,11 +292,13 @@ function ProjectMenu({
   onDuplicate,
   onArchive,
   onDelete,
+  onSaveAsTemplate,
 }: {
   project: DashboardProject;
   onDuplicate: () => void;
   onArchive: () => void;
   onDelete: () => void;
+  onSaveAsTemplate: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -190,6 +335,12 @@ function ProjectMenu({
             className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent text-left"
           >
             <Copy className="h-3.5 w-3.5" /> Duplicate
+          </button>
+          <button
+            onClick={() => { setOpen(false); onSaveAsTemplate(); }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent text-left"
+          >
+            <BookTemplate className="h-3.5 w-3.5" /> Save as Template
           </button>
           <button
             onClick={() => { setOpen(false); onArchive(); }}
@@ -270,7 +421,7 @@ function DeleteModal({
 
 // ─── Main dashboard ───────────────────────────────────────────────────────────
 
-export default function ProjectDashboard({ initialProjects, thumbnailUrls }: Props) {
+export default function ProjectDashboard({ initialProjects, thumbnailUrls, quickStartTemplates = [] }: Props) {
   const router = useRouter();
   const [projects, setProjects] = useState(initialProjects);
   const [search, setSearch] = useState("");
@@ -280,6 +431,8 @@ export default function ProjectDashboard({ initialProjects, thumbnailUrls }: Pro
   const [showArchived, setShowArchived] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DashboardProject | null>(null);
+  const [saveAsTemplateTarget, setSaveAsTemplateTarget] = useState<DashboardProject | null>(null);
+  const [templateSavedNotice, setTemplateSavedNotice] = useState(false);
 
   // Filter + sort
   const filtered = useMemo(() => {
@@ -368,6 +521,34 @@ export default function ProjectDashboard({ initialProjects, thumbnailUrls }: Pro
 
   return (
     <div className="space-y-10">
+      {/* ── Quick-start from template ── */}
+      {quickStartTemplates.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-widest text-muted-foreground">
+            Start from Template
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {quickStartTemplates.map((t) => (
+              <Link
+                key={t.id}
+                href={`/projects/new?templateId=${t.id}`}
+                className="flex items-center gap-2 rounded-full border bg-card px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-primary" />
+                {t.name}
+                <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+              </Link>
+            ))}
+            <Link
+              href="/templates"
+              className="flex items-center gap-2 rounded-full border border-dashed px-4 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              View all templates →
+            </Link>
+          </div>
+        </section>
+      )}
+
       {/* ── Recent projects (horizontal scroll row) ── */}
       {recentProjects.length > 0 && (
         <section>
@@ -543,6 +724,7 @@ export default function ProjectDashboard({ initialProjects, thumbnailUrls }: Pro
                       onDuplicate={() => handleDuplicate(p)}
                       onArchive={() => handleArchive(p)}
                       onDelete={() => setDeleteTarget(p)}
+                      onSaveAsTemplate={() => setSaveAsTemplateTarget(p)}
                     />
                   </div>
                 </div>
@@ -559,6 +741,32 @@ export default function ProjectDashboard({ initialProjects, thumbnailUrls }: Pro
           onConfirm={() => handleDelete(deleteTarget)}
           onCancel={() => setDeleteTarget(null)}
         />
+      )}
+
+      {/* Save as Template modal */}
+      {saveAsTemplateTarget && (
+        <SaveAsTemplateModal
+          project={saveAsTemplateTarget}
+          onSaved={() => {
+            setSaveAsTemplateTarget(null);
+            setTemplateSavedNotice(true);
+            setTimeout(() => setTemplateSavedNotice(false), 4000);
+          }}
+          onCancel={() => setSaveAsTemplateTarget(null)}
+        />
+      )}
+
+      {/* Template-saved notice */}
+      {templateSavedNotice && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 flex items-center gap-3 rounded-xl border bg-card px-5 py-3 shadow-xl">
+          <CheckCircle2 className="h-5 w-5 text-green-500 shrink-0" />
+          <p className="text-sm font-medium">
+            Template saved.{" "}
+            <Link href="/templates" className="text-primary underline underline-offset-2">
+              View in Template Library →
+            </Link>
+          </p>
+        </div>
       )}
     </div>
   );

@@ -470,6 +470,29 @@ model SocialPost {
   @@index([projectId])
 }
 
+// ─── Phase 13: Template & Style Library ──────────────────────────────────────
+
+model Template {
+  id               String   @id @default(cuid())
+  name             String
+  description      String   @db.Text
+  genre            String
+  tone             String
+  visualStyle      String
+  audioStyle       String
+  targetPlatform   String
+  targetLength     String
+  isBuiltIn        Boolean  @default(false)
+  usageCount       Int      @default(0)
+  sourceProjectId  String?
+  thumbnailPath    String?
+  characterConfig  String?  @db.Text   // JSON array of character stubs
+  musicConfig      String?  @db.Text   // JSON: music cue preferences
+  generationConfig String?  @db.Text   // JSON: visual generation settings
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
 // ─── Phase 12: Project Version History ───────────────────────────────────────
 
 model ProjectVersion {

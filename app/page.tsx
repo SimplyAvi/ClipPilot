@@ -13,6 +13,7 @@ import { db } from "@/lib/db";
 import { getSignedViewUrl } from "@/lib/storage";
 import ProjectDashboard, {
   type DashboardProject,
+  type QuickStartTemplate,
 } from "@/app/_components/project-dashboard";
 
 // ─── Data fetching ────────────────────────────────────────────────────────────
@@ -78,14 +79,34 @@ async function getThumbnailUrls(
   return urls;
 }
 
+async function getQuickStartTemplates(): Promise<QuickStartTemplate[]> {
+  const templates = await db.template.findMany({
+    orderBy: [{ usageCount: "desc" }, { createdAt: "asc" }],
+    take: 3,
+    select: {
+      id: true,
+      name: true,
+      genre: true,
+      tone: true,
+      targetPlatform: true,
+      targetLength: true,
+    },
+  });
+  return templates;
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function HomePage() {
   let projects: DashboardProject[] = [];
   let thumbnailUrls: Record<string, string> = {};
+  let quickStartTemplates: QuickStartTemplate[] = [];
 
   try {
-    projects = await getAllProjects();
+    [projects, quickStartTemplates] = await Promise.all([
+      getAllProjects(),
+      getQuickStartTemplates(),
+    ]);
     thumbnailUrls = await getThumbnailUrls(projects);
   } catch (err) {
     console.error("[HomePage] Failed to load projects:", err);
@@ -111,6 +132,7 @@ export default async function HomePage() {
       <ProjectDashboard
         initialProjects={projects}
         thumbnailUrls={thumbnailUrls}
+        quickStartTemplates={quickStartTemplates}
       />
     </div>
   );

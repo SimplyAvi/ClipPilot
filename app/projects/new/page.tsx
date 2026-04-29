@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useRef, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,6 +23,8 @@ import {
   FileUp,
   ClipboardList,
   Settings,
+  Sparkles,
+  X,
 } from "lucide-react";
 
 // ─── Option lists ─────────────────────────────────────────────────────────────
@@ -75,11 +77,35 @@ const LOADING_MESSAGES = [
   "Finalising your production plan…",
 ];
 
-// ─── Component ────────────────────────────────────────────────────────────────
+// ─── Template banner ──────────────────────────────────────────────────────────
 
-export default function NewProjectPage() {
+interface TemplateMeta { id: string; name: string }
+
+function TemplateBanner({ template, onDismiss }: { template: TemplateMeta; onDismiss: () => void }) {
+  return (
+    <div className="mb-6 flex items-center gap-3 rounded-xl border border-green-500/40 bg-green-500/10 px-4 py-3 text-sm text-green-700 dark:text-green-400">
+      <Sparkles className="h-4 w-4 shrink-0" />
+      <span>
+        Using template: <span className="font-semibold">{template.name}</span>.{" "}
+        All style settings are pre-configured.
+      </span>
+      <button onClick={onDismiss} className="ml-auto text-green-600 hover:text-green-800">
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
+// ─── Inner form (uses useSearchParams — must be wrapped in Suspense) ───────────
+
+function NewProjectForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Template state
+  const [activeTemplate, setActiveTemplate] = useState<TemplateMeta | null>(null);
+  const [loadingTemplate, setLoadingTemplate] = useState(false);
 
   // Which starting option is selected
   const [mode, setMode] = useState<"none" | "script">("none");
@@ -100,6 +126,30 @@ export default function NewProjectPage() {
   const [loading, setLoading] = useState(false);
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  // Load template from query param on mount
+  useEffect(() => {
+    const templateId = searchParams.get("templateId");
+    if (!templateId) return;
+
+    setLoadingTemplate(true);
+    fetch(`/api/templates/${templateId}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (!json.data) return;
+        const t = json.data;
+        setActiveTemplate({ id: t.id, name: t.name });
+        if (t.genre) setGenre(t.genre);
+        if (t.tone) setTone(t.tone);
+        if (t.targetPlatform) setPlatform(t.targetPlatform);
+        if (t.targetLength) setTargetLength(t.targetLength);
+        // Auto-select script mode so fields are visible
+        setMode("script");
+      })
+      .catch(() => {/* silently ignore — user can still fill in manually */})
+      .finally(() => setLoadingTemplate(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Rotate loading messages every 3 seconds
   useEffect(() => {
@@ -245,6 +295,19 @@ export default function NewProjectPage() {
           Start from an existing script or describe your idea.
         </p>
       </div>
+
+      {/* Template banner */}
+      {loadingTemplate && (
+        <div className="mb-6 flex items-center gap-3 rounded-xl border px-4 py-3 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading template settings…
+        </div>
+      )}
+      {activeTemplate && !loadingTemplate && (
+        <TemplateBanner
+          template={activeTemplate}
+          onDismiss={() => setActiveTemplate(null)}
+        />
+      )}
 
       {/* ── Starting option cards ── */}
       <div className="mb-8 grid gap-4 sm:grid-cols-2">
@@ -518,5 +581,17 @@ export default function NewProjectPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Page export ──────────────────────────────────────────────────────────────
+// Wrap in Suspense so useSearchParams() inside NewProjectForm doesn't break
+// static rendering.
+
+export default function NewProjectPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-3xl py-16 text-center text-muted-foreground">Loading…</div>}>
+      <NewProjectForm />
+    </Suspense>
   );
 }
