@@ -16,6 +16,7 @@
 import { textToSpeech, buildVoiceSettings, applyPaceToText } from "@/lib/voice-client";
 import { uploadToR2 } from "@/lib/storage";
 import { db } from "@/lib/db";
+import { recordElevenLabsCost } from "@/lib/analytics/cost-tracker";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -90,7 +91,8 @@ export async function generateSingleLine(line: DialogueLineInput): Promise<{
 export async function generateShotDialogue(
   sceneId: string,
   shotId: string,
-  lines: DialogueLineInput[]
+  lines: DialogueLineInput[],
+  projectId?: string
 ): Promise<DialogueTiming[]> {
   const sorted = [...lines].sort((a, b) => a.lineIndex - b.lineIndex);
   const timings: DialogueTiming[] = [];
@@ -122,6 +124,11 @@ export async function generateShotDialogue(
           durationSec: estimatedDurationSec,
         },
       });
+
+      // Fire-and-forget cost recording (char count as proxy for ElevenLabs billing)
+      if (projectId) {
+        void recordElevenLabsCost(projectId, line.text.length);
+      }
 
       timings.push({ lineId: line.id, audioPath: r2Key, startTimeSec, endTimeSec, durationSec: estimatedDurationSec });
       console.log(`[dialogue] Line ${line.lineIndex} done — ~${estimatedDurationSec.toFixed(2)}s`);

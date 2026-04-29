@@ -114,6 +114,10 @@ model Project {
   thumbnailPath String?   // R2 key of selected thumbnail (denormalized for fast list queries)
   completedAt   DateTime?
   archivedAt    DateTime?
+  // Style metadata (set at analysis time, used for insights)
+  genre         String?
+  tone          String?
+  targetLength  String?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
@@ -127,6 +131,7 @@ model Project {
   thumbnails     ProjectThumbnail[]
   posts          SocialPost[]
   versions       ProjectVersion[]
+  costs          ProjectCost[]
 }
 
 model Character {
@@ -467,7 +472,45 @@ model SocialPost {
   publishedAt    DateTime @default(now())
   status         String   @default("published")
 
+  analytics      VideoAnalytics?
+
   @@index([projectId])
+}
+
+// ─── Phase 14: Analytics & Performance Tracking ──────────────────────────────
+
+model VideoAnalytics {
+  id                    String     @id @default(cuid())
+  socialPostId          String     @unique
+  socialPost            SocialPost @relation(fields: [socialPostId], references: [id], onDelete: Cascade)
+  platform              String
+  fetchedAt             DateTime   @default(now())
+  viewCount             Int        @default(0)
+  likeCount             Int        @default(0)
+  commentCount          Int        @default(0)
+  shareCount            Int        @default(0)
+  watchTimeSeconds      Int        @default(0)
+  impressions           Int        @default(0)
+  clickThroughRate      Float?
+  averageViewDuration   Float?
+  retentionRate         Float?
+
+  @@index([platform])
+}
+
+model ProjectCost {
+  id              String   @id @default(cuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  provider        String   // anthropic | runway | elevenlabs | replicate
+  jobType         String   // script_analysis | video_generation | voice_generation
+  tokenCount      Int?
+  durationSeconds Int?
+  cost            Float
+  recordedAt      DateTime @default(now())
+
+  @@index([projectId])
+  @@index([provider])
 }
 
 // ─── Phase 13: Template & Style Library ──────────────────────────────────────

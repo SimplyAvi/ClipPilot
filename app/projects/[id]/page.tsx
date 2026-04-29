@@ -3,7 +3,11 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Clapperboard, Users, Music, ShieldCheck, Upload, Captions, Image as ImageIcon, Share2, History } from "lucide-react";
+import {
+  ArrowLeft, Clapperboard, Users, Music, ShieldCheck, Upload,
+  Captions, Image as ImageIcon, Share2, History, BarChart2,
+  Eye, ThumbsUp, Clock, ExternalLink,
+} from "lucide-react";
 
 const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   DRAFT: { label: "Draft", variant: "secondary" },
@@ -12,18 +16,47 @@ const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secon
   ARCHIVED: { label: "Archived", variant: "destructive" },
 };
 
+const PLATFORM_LABELS: Record<string, string> = {
+  youtube: "YouTube",
+  tiktok: "TikTok",
+  instagram: "Instagram",
+};
+
+function fmt(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
 export default async function ProjectPage({ params }: { params: { id: string } }) {
   const project = await db.project.findUnique({
     where: { id: params.id },
     include: {
       scripts: { orderBy: { createdAt: "desc" }, take: 1 },
       _count: { select: { scenes: true, assets: true, jobs: true } },
+      posts: {
+        where: { status: "published" },
+        include: { analytics: true },
+        orderBy: { publishedAt: "desc" },
+      },
     },
   });
 
   if (!project) notFound();
 
   const status = STATUS_LABELS[project.status] ?? STATUS_LABELS.DRAFT;
+  const publishedPosts = project.posts ?? [];
+  const postsWithAnalytics = publishedPosts.filter((p) => p.analytics);
+
+  // Aggregate analytics across all platforms for this project
+  const totalViews = postsWithAnalytics.reduce((s, p) => s + p.analytics!.viewCount, 0);
+  const totalLikes = postsWithAnalytics.reduce((s, p) => s + p.analytics!.likeCount, 0);
+  const avgRetention = postsWithAnalytics.some((p) => p.analytics!.retentionRate != null)
+    ? postsWithAnalytics
+        .filter((p) => p.analytics!.retentionRate != null)
+        .reduce((s, p) => s + p.analytics!.retentionRate!, 0) /
+      postsWithAnalytics.filter((p) => p.analytics!.retentionRate != null).length
+    : null;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -101,6 +134,94 @@ export default async function ProjectPage({ params }: { params: { id: string } }
               Versions
             </Link>
           </Button>
+        </div>
+      )}
+
+      {/* Performance Summary — shown only when there are published posts */}
+      {publishedPosts.length > 0 && (
+        <div className="mt-8 rounded-xl border bg-card shadow-sm">
+          <div className="flex items-center justify-between border-b px-5 py-4">
+            <div className="flex items-center gap-2">
+              <BarChart2 className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-base font-semibold">Performance Summary</h2>
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                {publishedPosts.length} post{publishedPosts.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+            <Link
+              href="/analytics"
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Full analytics
+              <ExternalLink className="h-3 w-3" />
+            </Link>
+          </div>
+
+          {postsWithAnalytics.length === 0 ? (
+            <div className="px-5 py-6 text-center text-sm text-muted-foreground">
+              Analytics not yet synced.{" "}
+              <Link href="/analytics" className="underline underline-offset-2 hover:text-foreground">
+                Sync now
+              </Link>
+            </div>
+          ) : (
+            <>
+              {/* Aggregate stats */}
+              <div className="grid grid-cols-3 divide-x border-b">
+                <div className="flex flex-col items-center py-4">
+                  <Eye className="mb-1 h-4 w-4 text-muted-foreground" />
+                  <p className="text-xl font-bold">{fmt(totalViews)}</p>
+                  <p className="text-xs text-muted-foreground">Views</p>
+                </div>
+                <div className="flex flex-col items-center py-4">
+                  <ThumbsUp className="mb-1 h-4 w-4 text-muted-foreground" />
+                  <p className="text-xl font-bold">{fmt(totalLikes)}</p>
+                  <p className="text-xs text-muted-foreground">Likes</p>
+                </div>
+                <div className="flex flex-col items-center py-4">
+                  <Clock className="mb-1 h-4 w-4 text-muted-foreground" />
+                  <p className="text-xl font-bold">
+                    {avgRetention != null ? `${avgRetention.toFixed(1)}%` : "—"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Avg Retention</p>
+                </div>
+              </div>
+
+              {/* Per-platform rows */}
+              <div className="divide-y">
+                {postsWithAnalytics.map((post) => (
+                  <div key={post.id} className="flex items-center justify-between px-5 py-3 text-sm">
+                    <div className="flex items-center gap-3">
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium capitalize">
+                        {PLATFORM_LABELS[post.platform] ?? post.platform}
+                      </span>
+                      <span className="text-muted-foreground">{post.title || "Untitled"}</span>
+                    </div>
+                    <div className="flex items-center gap-4 tabular-nums text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Eye className="h-3 w-3" />
+                        {fmt(post.analytics!.viewCount)}
+                      </span>
+                      {post.analytics!.retentionRate != null && (
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {post.analytics!.retentionRate.toFixed(1)}%
+                        </span>
+                      )}
+                      <a
+                        href={post.postUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:text-foreground transition-colors"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

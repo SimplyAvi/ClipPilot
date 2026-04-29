@@ -9,6 +9,7 @@
  */
 
 import { uploadToR2, shotVideoKey } from "@/lib/storage";
+import { recordRunwayCost } from "@/lib/analytics/cost-tracker";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -318,6 +319,11 @@ export async function generateShot(
   // Upload to R2
   const r2Key = shotVideoKey(projectId, sceneId, shot.shotId);
   await uploadToR2(r2Key, videoBuffer, "video/mp4");
+
+  // Record cost (fire-and-forget — never blocks generation)
+  if (provider === "runway") {
+    void recordRunwayCost(projectId, shot.duration);
+  }
 
   console.log(
     `[video] Shot ${shot.shotNumber} complete — provider=${provider} cost=$${costUsd.toFixed(3)} key=${r2Key}`

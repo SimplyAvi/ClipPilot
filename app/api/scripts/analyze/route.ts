@@ -8,6 +8,7 @@ import {
   buildScriptAnalysisPrompt,
   type ScriptAnalysis,
 } from "@/lib/prompts/script-analysis";
+import { recordAnthropicCost } from "@/lib/analytics/cost-tracker";
 
 // ─── Request schema ───────────────────────────────────────────────────────────
 
@@ -126,6 +127,8 @@ export async function POST(request: Request) {
 
   // 3. Call Claude
   let rawAnalysis: string;
+  let claudeInputTokens = 0;
+  let claudeOutputTokens = 0;
   try {
     const message = await anthropic.messages.create({
       model: "claude-sonnet-4-5",
@@ -147,6 +150,8 @@ export async function POST(request: Request) {
     const block = message.content[0];
     if (block.type !== "text") throw new Error("Unexpected response type from Claude");
     rawAnalysis = block.text;
+    claudeInputTokens = message.usage.input_tokens;
+    claudeOutputTokens = message.usage.output_tokens;
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error("[analyze] Claude API error:", msg);
@@ -197,6 +202,9 @@ export async function POST(request: Request) {
       data: {
         name: projectName,
         status: "DRAFT",
+        genre,
+        tone,
+        targetLength: targetLength === "ai-recommend" ? analysis.runtimeRecommendation.suggested.toLowerCase() : targetLength,
         scripts: {
           create: {
             content: scriptText,
@@ -222,6 +230,11 @@ export async function POST(request: Request) {
         })
       )
     );
+
+    // Fire-and-forget cost recording now that we have the projectId
+    if (claudeInputTokens > 0) {
+      void recordAnthropicCost(project.id, "script_analysis", claudeInputTokens, claudeOutputTokens);
+    }
 
     return NextResponse.json(
       { data: { projectId: project.id, analysis }, error: null },
