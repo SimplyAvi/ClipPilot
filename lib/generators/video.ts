@@ -16,7 +16,6 @@ import { recordRunwayCost } from "@/lib/analytics/cost-tracker";
 export interface CharacterRef {
   name: string;
   description: string | null;
-  confirmedFictional: boolean;
 }
 
 export interface ShotConfig {
@@ -72,9 +71,8 @@ export function buildShotPrompt(shot: ShotConfig): string {
   parts.push(`set in ${shot.location}, ${shot.timeOfDay.toLowerCase()}.`);
 
   // Characters
-  const fictional = shot.characters.filter((c) => c.confirmedFictional);
-  if (fictional.length > 0) {
-    const charDesc = fictional
+  if (shot.characters.length > 0) {
+    const charDesc = shot.characters
       .map((c) => {
         const base = `fictional character ${c.name}`;
         return c.description ? `${base} (${c.description})` : base;

@@ -2,45 +2,78 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 
-// ─── Schemas ──────────────────────────────────────────────────────────────────
-
-const CreateCharacterSchema = z.object({
-  projectId: z.string().min(1, "projectId is required"),
+const CharacterSchema = z.object({
   name: z.string().min(1, "Character name is required").max(100),
-  ageAppearance: z.number().int().min(18).max(80).nullable().optional(),
-  description: z.string().max(2000).optional(),
-  personalityNotes: z.string().max(2000).optional(),
-  elevenLabsVoiceId: z.string().optional(),
-  voiceName: z.string().optional(),
-  speakingPace: z.enum(["slow", "normal", "fast"]).default("normal"),
-  emotionalRange: z.enum(["restrained", "moderate", "expressive"]).default("moderate"),
-  accent: z.string().max(100).optional(),
-  confirmedFictional: z.boolean().default(false),
+  role: z.string().max(60).nullable().optional(),
+  age: z.number().int().min(5).max(100).nullable().optional(),
+  gender: z.string().max(60).nullable().optional(),
+  ethnicity: z.string().max(120).nullable().optional(),
+  physicalDescription: z.string().max(4000).nullable().optional(),
+  biography: z.string().max(8000).nullable().optional(),
+  personality: z.string().max(4000).nullable().optional(),
+  motivations: z.string().max(4000).nullable().optional(),
+  fears: z.string().max(4000).nullable().optional(),
+  quirks: z.string().max(4000).nullable().optional(),
+  emotionalRange: z.string().max(80).nullable().optional(),
+  gestureTendencies: z.string().max(4000).nullable().optional(),
+  forbiddenChanges: z.string().max(4000).nullable().optional(),
+  portraitPath: z.string().nullable().optional(),
+  portraitPrompt: z.string().max(8000).nullable().optional(),
+  portraitStyle: z.string().max(80).nullable().optional(),
+  voiceId: z.string().nullable().optional(),
+  voicePace: z.string().nullable().optional(),
+  voiceAccent: z.string().max(120).nullable().optional(),
+  voiceTone: z.string().max(120).nullable().optional(),
+  voiceNotes: z.string().max(4000).nullable().optional(),
+  tags: z.string().max(1000).nullable().optional(),
+  projectId: z.string().optional(),
+  roleInProject: z.string().max(120).nullable().optional(),
 });
-
-// ─── GET /api/characters?projectId=xxx ───────────────────────────────────────
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
+  const q = searchParams.get("q")?.trim();
+  const archived = searchParams.get("archived") === "true";
   const projectId = searchParams.get("projectId");
-
-  if (!projectId) {
-    return NextResponse.json({ data: null, error: "projectId is required" }, { status: 400 });
-  }
+  const sort = searchParams.get("sort") ?? "recent";
 
   try {
     const characters = await db.character.findMany({
-      where: { projectId },
-      orderBy: { createdAt: "asc" },
+      where: {
+        isArchived: archived,
+        ...(q
+          ? {
+              OR: [
+                { name: { contains: q, mode: "insensitive" } },
+                { tags: { contains: q, mode: "insensitive" } },
+                { physicalDescription: { contains: q, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+        ...(projectId
+          ? { projectCharacters: { some: { projectId } } }
+          : {}),
+      },
+      include: {
+        projectCharacters: {
+          include: { project: { select: { id: true, name: true, status: true, thumbnailPath: true } } },
+          orderBy: { addedAt: "desc" },
+        },
+      },
+      orderBy: sort === "name" ? { name: "asc" } : { createdAt: "desc" },
     });
-    return NextResponse.json({ data: characters, error: null });
+
+    const sorted =
+      sort === "used"
+        ? [...characters].sort((a, b) => b.projectCharacters.length - a.projectCharacters.length)
+        : characters;
+
+    return NextResponse.json({ data: sorted, error: null });
   } catch (err) {
     console.error("[GET /api/characters]", err);
     return NextResponse.json({ data: null, error: "Failed to fetch characters" }, { status: 500 });
   }
 }
-
-// ─── POST /api/characters ─────────────────────────────────────────────────────
 
 export async function POST(request: Request) {
   let body: unknown;
@@ -50,39 +83,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ data: null, error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const parsed = CreateCharacterSchema.safeParse(body);
+  const parsed = CharacterSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { data: null, error: parsed.error.errors[0].message },
-      { status: 400 }
-    );
+    return NextResponse.json({ data: null, error: parsed.error.errors[0].message }, { status: 400 });
   }
 
-  const { projectId, name, ageAppearance, description, personalityNotes,
-    elevenLabsVoiceId, voiceName, speakingPace, emotionalRange, accent,
-    confirmedFictional } = parsed.data;
-
-  // Verify project exists
-  const project = await db.project.findUnique({ where: { id: projectId } });
-  if (!project) {
-    return NextResponse.json({ data: null, error: "Project not found" }, { status: 404 });
-  }
+  const { projectId, roleInProject, ...characterData } = parsed.data;
 
   try {
     const character = await db.character.create({
       data: {
-        projectId,
-        name,
-        ageAppearance: ageAppearance ?? null,
-        description: description || null,
-        personalityNotes: personalityNotes || null,
-        elevenLabsVoiceId: elevenLabsVoiceId || null,
-        voiceName: voiceName || null,
-        speakingPace,
-        emotionalRange,
-        accent: accent || null,
-        confirmedFictional,
+        ...characterData,
+        ...(projectId
+          ? {
+              projectCharacters: {
+                create: { projectId, roleInProject: roleInProject ?? characterData.role ?? null },
+              },
+            }
+          : {}),
       },
+      include: { projectCharacters: true },
     });
     return NextResponse.json({ data: character, error: null }, { status: 201 });
   } catch (err) {

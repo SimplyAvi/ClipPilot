@@ -3,7 +3,6 @@
  *
  * Kicks off scene generation for a project.
  * - Validates the project has a parsed script
- * - Validates all characters have confirmedFictional = true
  * - Creates Scene + Shot records from the script analysis
  * - Creates a Job record (SCENE_GENERATE) and enqueues BullMQ jobs
  *   (one BullMQ job per scene)
@@ -28,7 +27,7 @@ export async function POST(
       where: { id: projectId },
       include: {
         scripts: { orderBy: { createdAt: "desc" }, take: 1 },
-        characters: true,
+        projectCharacters: { include: { character: true } },
       },
     });
 
@@ -40,18 +39,6 @@ export async function POST(
     if (!script?.parsedData) {
       return NextResponse.json(
         { data: null, error: "Project has no analyzed script. Run script analysis first." },
-        { status: 422 }
-      );
-    }
-
-    // ── Compliance gate: all characters must be confirmed fictional ──
-    const unconfirmed = project.characters.filter((c) => !c.confirmedFictional);
-    if (unconfirmed.length > 0) {
-      return NextResponse.json(
-        {
-          data: null,
-          error: `${unconfirmed.length} character(s) must be confirmed as fictional before generating: ${unconfirmed.map((c) => c.name).join(", ")}`,
-        },
         { status: 422 }
       );
     }
@@ -78,10 +65,9 @@ export async function POST(
     });
 
     // ── Character refs for the worker ──
-    const characterRefs = project.characters.map((c) => ({
+    const characterRefs = project.projectCharacters.map(({ character: c }) => ({
       name: c.name,
-      description: c.description,
-      confirmedFictional: c.confirmedFictional,
+      description: c.physicalDescription,
     }));
 
     // ── Create Scene + Shot DB records and enqueue one BullMQ job per scene ──

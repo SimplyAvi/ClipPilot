@@ -32,7 +32,7 @@ export default async function ShotReviewPage({
       dialogueLines: {
         include: {
           character: {
-            select: { id: true, name: true, elevenLabsVoiceId: true },
+            select: { id: true, name: true, voiceId: true },
           },
         },
         orderBy: { lineIndex: "asc" },
@@ -78,7 +78,7 @@ export default async function ShotReviewPage({
     startTimeSec: dl.startTimeSec,
     durationSec: dl.durationSec,
     character: dl.character
-      ? { id: dl.character.id, name: dl.character.name, elevenLabsVoiceId: dl.character.elevenLabsVoiceId }
+      ? { id: dl.character.id, name: dl.character.name, voiceId: dl.character.voiceId }
       : null,
   }));
 

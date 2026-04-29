@@ -17,7 +17,7 @@ export async function POST(
     where: { id: params.id },
     include: {
       scripts: { orderBy: { createdAt: "desc" }, take: 1 },
-      characters: true,
+      projectCharacters: true,
       scenes: {
         include: { musicCue: true },
       },
@@ -49,21 +49,14 @@ export async function POST(
     });
   }
 
-  // Copy characters (reset voice paths — no generated audio)
-  for (const char of source.characters) {
-    await db.character.create({
+  // Reuse global characters in the duplicate project.
+  for (const cast of source.projectCharacters) {
+    await db.projectCharacter.create({
       data: {
         projectId: duplicate.id,
-        name: char.name,
-        ageAppearance: char.ageAppearance,
-        description: char.description,
-        personalityNotes: char.personalityNotes,
-        elevenLabsVoiceId: char.elevenLabsVoiceId,
-        voiceName: char.voiceName,
-        speakingPace: char.speakingPace,
-        emotionalRange: char.emotionalRange,
-        accent: char.accent,
-        confirmedFictional: char.confirmedFictional,
+        characterId: cast.characterId,
+        roleInProject: cast.roleInProject,
+        scenesAppearedIn: cast.scenesAppearedIn,
       },
     });
   }

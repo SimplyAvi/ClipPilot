@@ -18,6 +18,7 @@ import {
   ChevronRight,
   LayoutTemplate,
   BarChart2,
+  UserRound,
 } from "lucide-react";
 
 // ─── Status dot colours (matches project-dashboard.tsx) ───────────────────────
@@ -43,8 +44,9 @@ interface RecentProject {
 
 const navItems = [
   { label: "Projects", href: "/", icon: FolderOpen },
-  { label: "Analytics", href: "/analytics", icon: BarChart2 },
+  { label: "Characters", href: "/characters", icon: UserRound, count: true },
   { label: "Templates", href: "/templates", icon: LayoutTemplate },
+  { label: "Analytics", href: "/analytics", icon: BarChart2 },
   { label: "Assets", href: "/assets", icon: Image },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
@@ -140,6 +142,18 @@ function RecentProjectsList() {
 export function Sidebar() {
   const pathname = usePathname();
   const projectId = getProjectId(pathname);
+  const [characterCount, setCharacterCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/characters")
+      .then((r) => r.json())
+      .then((json) => {
+        if (!cancelled) setCharacterCount((json.data ?? []).length);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [pathname]);
 
   return (
     <aside className="flex h-screen w-60 flex-col border-r bg-card">
@@ -175,7 +189,12 @@ export function Sidebar() {
               )}
             >
               <Icon className="h-4 w-4" />
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {item.count && characterCount !== null && (
+                <span className="rounded-full bg-background/20 px-2 py-0.5 text-xs">
+                  {characterCount}
+                </span>
+              )}
             </Link>
           );
         })}

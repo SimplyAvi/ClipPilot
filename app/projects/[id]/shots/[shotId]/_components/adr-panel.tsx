@@ -10,7 +10,7 @@ import { Loader2, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
 interface Character {
   id: string;
   name: string;
-  elevenLabsVoiceId: string | null;
+  voiceId: string | null;
 }
 
 interface DialogueLine {
@@ -174,7 +174,7 @@ function LineRow({
             </p>
           )}
 
-          {!line.character?.elevenLabsVoiceId && (
+          {!line.character?.voiceId && (
             <p className="text-xs text-amber-600">
               Character has no voice configured — cannot regenerate.
             </p>
@@ -183,7 +183,7 @@ function LineRow({
           <Button
             size="sm"
             onClick={handleRegenerate}
-            disabled={regenerating || !line.character?.elevenLabsVoiceId}
+            disabled={regenerating || !line.character?.voiceId}
           >
             {regenerating ? (
               <Loader2 className="mr-2 h-3 w-3 animate-spin" />

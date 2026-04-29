@@ -57,8 +57,8 @@ export async function POST(request: NextRequest) {
         orderBy: { createdAt: "desc" },
         take: 1,
       },
-      characters: {
-        select: { name: true, description: true, confirmedFictional: true },
+      projectCharacters: {
+        include: { character: { select: { name: true, physicalDescription: true } } },
       },
       scripts: {
         orderBy: { createdAt: "desc" },
@@ -87,9 +87,9 @@ export async function POST(request: NextRequest) {
     genre,
     tone,
     logline,
-    characters: project.characters.map((c) => ({
+    characters: project.projectCharacters.map(({ character: c }) => ({
       name: c.name,
-      description: c.description,
+      description: c.physicalDescription,
     })),
     location: firstScene?.location,
     timeOfDay: firstScene?.timeOfDay,

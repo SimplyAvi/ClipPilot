@@ -21,7 +21,7 @@ export async function GET(
     const line = await db.dialogueLine.findUnique({
       where: { id: params.id },
       include: {
-        character: { select: { id: true, name: true, elevenLabsVoiceId: true, speakingPace: true, emotionalRange: true } },
+        character: { select: { id: true, name: true, voiceId: true, voicePace: true, emotionalRange: true } },
       },
     });
 

@@ -25,7 +25,7 @@ export default function ConfigureCharacterButton({
       });
       const json = await res.json();
       if (json.data?.id) {
-        router.push(`/projects/${projectId}/characters/${json.data.id}`);
+        router.push(`/characters/${json.data.id}/edit?projectId=${projectId}`);
       }
     } finally {
       setLoading(false);

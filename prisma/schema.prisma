@@ -107,60 +107,93 @@ model ProviderKey {
 }
 
 model Project {
-  id        String        @id @default(cuid())
-  name      String
-  status    ProjectStatus @default(DRAFT)
-  platform  String?       // youtube | tiktok | instagram | youtube_shorts
-  thumbnailPath String?   // R2 key of selected thumbnail (denormalized for fast list queries)
+  id            String        @id @default(cuid())
+  name          String
+  status        ProjectStatus @default(DRAFT)
+  platform      String? // youtube | tiktok | instagram | youtube_shorts
+  thumbnailPath String? // R2 key of selected thumbnail (denormalized for fast list queries)
   completedAt   DateTime?
   archivedAt    DateTime?
   // Style metadata (set at analysis time, used for insights)
   genre         String?
   tone          String?
   targetLength  String?
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
-  scripts        Script[]
-  assets         Asset[]
-  jobs           Job[]
-  scenes         Scene[]
-  characters     Character[]
-  exports        Export[]
-  transcription  Transcription?
-  thumbnails     ProjectThumbnail[]
-  posts          SocialPost[]
-  versions       ProjectVersion[]
-  costs          ProjectCost[]
+  scripts           Script[]
+  assets            Asset[]
+  jobs              Job[]
+  scenes            Scene[]
+  projectCharacters ProjectCharacter[]
+  exports           Export[]
+  transcription     Transcription?
+  thumbnails        ProjectThumbnail[]
+  posts             SocialPost[]
+  versions          ProjectVersion[]
+  costs             ProjectCost[]
 }
 
 model Character {
-  id               String   @id @default(cuid())
+  id                  String                        @id @default(cuid())
+  name                String
+  role                String?
+  age                 Int?
+  gender              String?
+  ethnicity           String?
+  physicalDescription String?                       @db.Text
+  biography           String?                       @db.Text
+  personality         String?                       @db.Text
+  motivations         String?                       @db.Text
+  fears               String?                       @db.Text
+  quirks              String?                       @db.Text
+  emotionalRange      String?
+  gestureTendencies   String?                       @db.Text
+  forbiddenChanges    String?                       @db.Text
+  portraitPath        String?
+  portraitPrompt      String?                       @db.Text
+  portraitStyle       String?
+  voiceId             String?
+  voicePace           String?
+  voiceAccent         String?
+  voiceTone           String?
+  voiceNotes          String?                       @db.Text
+  isArchived          Boolean                       @default(false)
+  tags                String?
+  createdAt           DateTime                      @default(now())
+  updatedAt           DateTime                      @updatedAt
+  projectCharacters   ProjectCharacter[]
+  dialogueLines       DialogueLine[]
+  portraitGenerations CharacterPortraitGeneration[]
+}
+
+model ProjectCharacter {
+  id               String    @id @default(cuid())
+  characterId      String
+  character        Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
   projectId        String
+  project          Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  roleInProject    String?
+  scenesAppearedIn String?
+  addedAt          DateTime  @default(now())
 
-  // Identity — must be entirely fictional
-  name             String
-  ageAppearance    Int?            // 18–80
-  description      String?  @db.Text  // physical description for image prompts
-  personalityNotes String?  @db.Text  // used for dialogue direction
-
-  // Voice configuration
-  elevenLabsVoiceId String?
-  voiceName         String?         // display label of the chosen ElevenLabs voice
-  speakingPace      String  @default("normal")    // slow | normal | fast
-  emotionalRange    String  @default("moderate")  // restrained | moderate | expressive
-  accent            String?
-
-  // Compliance acknowledgement — user must confirm character is fictional
-  confirmedFictional Boolean @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  dialogueLines DialogueLine[]
-
+  @@unique([characterId, projectId])
   @@index([projectId])
+  @@index([characterId])
+}
+
+model CharacterPortraitGeneration {
+  id            String    @id @default(cuid())
+  characterId   String
+  character     Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  imagePath     String
+  prompt        String    @db.Text
+  style         String?
+  flagged       Boolean   @default(false)
+  flaggedReason String?   @db.Text
+  createdAt     DateTime  @default(now())
+
+  @@index([characterId])
 }
 
 model Script {
@@ -220,12 +253,12 @@ model Job {
   error         String?   @db.Text
 
   // Checkpoint — stores { lastCompletedShotId, completedShotIds, config } for resume
-  metadata      Json?
-  totalShots    Int       @default(0)
-  completedShots Int      @default(0)
+  metadata       Json?
+  totalShots     Int   @default(0)
+  completedShots Int   @default(0)
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
@@ -256,27 +289,27 @@ model Shot {
   status             ShotStatus @default(DRAFT)
 
   // Prompt used for generation
-  prompt             String?    @db.Text
+  prompt String? @db.Text
 
   // Likeness compliance check
-  likenessChecked    Boolean    @default(false)
+  likenessChecked     Boolean  @default(false)
   likenessCheckPassed Boolean?
-  likenessMatchedName String?   // name of person flagged (if any)
-  likenessScore      Float?     // similarity score 0–1
-  flaggedReason      String?    @db.Text
+  likenessMatchedName String? // name of person flagged (if any)
+  likenessScore       Float? // similarity score 0–1
+  flaggedReason       String?  @db.Text
 
   // Cost tracking per shot
-  generationCostUsd  Float?
+  generationCostUsd Float?
 
   // Audio pipeline (Phase 6)
-  mixedAudioPath     String?    // R2 key: full dialogue+music mix
-  dialogueStemPath   String?    // R2 key: dialogue-only stem
-  musicStemPath      String?    // R2 key: music-only stem (under this shot)
-  lipSyncedVideoPath String?    // R2 key: lip-synced version
-  lipSyncStatus      String?    // PENDING | COMPLETE | FAILED
+  mixedAudioPath     String? // R2 key: full dialogue+music mix
+  dialogueStemPath   String? // R2 key: dialogue-only stem
+  musicStemPath      String? // R2 key: music-only stem (under this shot)
+  lipSyncedVideoPath String? // R2 key: lip-synced version
+  lipSyncStatus      String? // PENDING | COMPLETE | FAILED
 
-  createdAt          DateTime   @default(now())
-  updatedAt          DateTime   @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   scene         Scene          @relation(fields: [sceneId], references: [id], onDelete: Cascade)
   dialogueLines DialogueLine[]
@@ -285,23 +318,23 @@ model Shot {
 // ─── Phase 6: Audio pipeline models ──────────────────────────────────────────
 
 model DialogueLine {
-  id                String        @id @default(cuid())
-  shotId            String
-  characterId       String?
-  lineIndex         Int           // display order within the shot (0-based)
+  id          String  @id @default(cuid())
+  shotId      String
+  characterId String?
+  lineIndex   Int // display order within the shot (0-based)
 
-  text              String        @db.Text
-  deliveryDirection String?       @db.Text   // acting note, e.g. "quietly, with fear"
+  text              String  @db.Text
+  deliveryDirection String? @db.Text // acting note, e.g. "quietly, with fear"
 
   // Generated audio
-  audioPath         String?       // R2 key
-  startTimeSec      Float?        // position in scene timeline
-  endTimeSec        Float?
-  durationSec       Float?
-  status            DialogueStatus @default(PENDING)
+  audioPath    String? // R2 key
+  startTimeSec Float? // position in scene timeline
+  endTimeSec   Float?
+  durationSec  Float?
+  status       DialogueStatus @default(PENDING)
 
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   shot      Shot       @relation(fields: [shotId], references: [id], onDelete: Cascade)
   character Character? @relation(fields: [characterId], references: [id])
@@ -326,21 +359,21 @@ enum ExportStatus {
 }
 
 model Export {
-  id          String         @id @default(cuid())
-  projectId   String
-  platform    ExportPlatform
-  status      ExportStatus   @default(PENDING)
-  error       String?        @db.Text
+  id        String         @id @default(cuid())
+  projectId String
+  platform  ExportPlatform
+  status    ExportStatus   @default(PENDING)
+  error     String?        @db.Text
 
   // Output files (R2 keys)
-  videoR2Key  String?        // assembled + encoded video
-  pdfR2Key    String?        // provenance report PDF
+  videoR2Key String? // assembled + encoded video
+  pdfR2Key   String? // provenance report PDF
 
   // Metadata baked at export time
-  durationSec   Float?
-  fileSizeBytes Int?
-  complianceSnapshot Json?   // snapshot of all compliance checks at export time
-  aiDisclosureApplied Boolean @default(false)
+  durationSec         Float?
+  fileSizeBytes       Int?
+  complianceSnapshot  Json? // snapshot of all compliance checks at export time
+  aiDisclosureApplied Boolean   @default(false)
   disclosureTimestamp DateTime?
 
   createdAt DateTime @default(now())
@@ -352,17 +385,17 @@ model Export {
 }
 
 model SceneMusicCue {
-  id            String   @id @default(cuid())
-  sceneId       String   @unique
-  assetId       String
+  id      String @id @default(cuid())
+  sceneId String @unique
+  assetId String
 
-  startPointSec Float    @default(0)     // offset into the music track
-  fadeInSec     Float    @default(2)
-  fadeOutSec    Float    @default(3)
-  volumeDb      Float    @default(-12)   // attenuation under dialogue
+  startPointSec Float @default(0) // offset into the music track
+  fadeInSec     Float @default(2)
+  fadeOutSec    Float @default(3)
+  volumeDb      Float @default(-12) // attenuation under dialogue
 
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   scene Scene @relation(fields: [sceneId], references: [id], onDelete: Cascade)
   asset Asset @relation(fields: [assetId], references: [id])
@@ -371,35 +404,35 @@ model SceneMusicCue {
 // ─── Phase 9: Captions & Subtitles ───────────────────────────────────────────
 
 model Transcription {
-  id          String   @id @default(cuid())
-  projectId   String   @unique
+  id        String @id @default(cuid())
+  projectId String @unique
 
   // Whisper response metadata
-  language    String?          // ISO language code detected by Whisper
-  durationSec Float?           // total audio duration
-  rawResponse Json             // full Whisper verbose_json response for re-processing
+  language    String? // ISO language code detected by Whisper
+  durationSec Float? // total audio duration
+  rawResponse Json // full Whisper verbose_json response for re-processing
 
   // Caption style saved per project
-  captionStyle Json?           // { fontSize, fontColor, backgroundColor, position, fontFamily }
+  captionStyle Json? // { fontSize, fontColor, backgroundColor, position, fontFamily }
 
-  segments    CaptionSegment[]
+  segments CaptionSegment[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model CaptionSegment {
-  id              String   @id @default(cuid())
+  id              String @id @default(cuid())
   transcriptionId String
-  index           Int              // display order (0-based)
+  index           Int // display order (0-based)
   startSec        Float
   endSec          Float
-  text            String   @db.Text
+  text            String @db.Text
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   transcription Transcription @relation(fields: [transcriptionId], references: [id], onDelete: Cascade)
 
@@ -415,27 +448,27 @@ enum ThumbnailVariant {
 }
 
 model ProjectThumbnail {
-  id        String           @id @default(cuid())
+  id        String @id @default(cuid())
   projectId String
 
-  variant   ThumbnailVariant
-  isSelected Boolean         @default(false)  // only one should be true per project
+  variant    ThumbnailVariant
+  isSelected Boolean          @default(false) // only one should be true per project
 
   // R2 keys for each platform size
-  youtubeR2Key  String?   // 1280×720
-  tiktokR2Key   String?   // 1080×1920
-  squareR2Key   String?   // 1080×1080
+  youtubeR2Key String? // 1280×720
+  tiktokR2Key  String? // 1080×1920
+  squareR2Key  String? // 1080×1080
 
   // Text overlay settings saved with this variant
-  titleText      String?
-  fontSize       String   @default("large")    // small | medium | large
-  textColor      String   @default("white")
-  textPosition   String   @default("bottom")   // bottom | center | top
-  textStyle      String   @default("shadow")   // plain | bold | shadow | outline
+  titleText    String?
+  fontSize     String  @default("large") // small | medium | large
+  textColor    String  @default("white")
+  textPosition String  @default("bottom") // bottom | center | top
+  textStyle    String  @default("shadow") // plain | bold | shadow | outline
 
   // Generation metadata
-  baseFramePath  String?   // R2 key of the source extracted frame (Impact Frame only)
-  prompt         String?   @db.Text
+  baseFramePath String? // R2 key of the source extracted frame (Impact Frame only)
+  prompt        String? @db.Text
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -449,9 +482,9 @@ model ProjectThumbnail {
 
 model SocialAccount {
   id                    String    @id @default(cuid())
-  platform              String    @unique    // youtube | tiktok | instagram
+  platform              String    @unique // youtube | tiktok | instagram
   username              String
-  platformUserId        String?              // channel ID, open_id, ig_user_id
+  platformUserId        String? // channel ID, open_id, ig_user_id
   encryptedAccessToken  String    @db.Text
   encryptedRefreshToken String?   @db.Text
   tokenExpiresAt        DateTime?
@@ -472,7 +505,7 @@ model SocialPost {
   publishedAt    DateTime @default(now())
   status         String   @default("published")
 
-  analytics      VideoAnalytics?
+  analytics VideoAnalytics?
 
   @@index([projectId])
 }
@@ -480,20 +513,20 @@ model SocialPost {
 // ─── Phase 14: Analytics & Performance Tracking ──────────────────────────────
 
 model VideoAnalytics {
-  id                    String     @id @default(cuid())
-  socialPostId          String     @unique
-  socialPost            SocialPost @relation(fields: [socialPostId], references: [id], onDelete: Cascade)
-  platform              String
-  fetchedAt             DateTime   @default(now())
-  viewCount             Int        @default(0)
-  likeCount             Int        @default(0)
-  commentCount          Int        @default(0)
-  shareCount            Int        @default(0)
-  watchTimeSeconds      Int        @default(0)
-  impressions           Int        @default(0)
-  clickThroughRate      Float?
-  averageViewDuration   Float?
-  retentionRate         Float?
+  id                  String     @id @default(cuid())
+  socialPostId        String     @unique
+  socialPost          SocialPost @relation(fields: [socialPostId], references: [id], onDelete: Cascade)
+  platform            String
+  fetchedAt           DateTime   @default(now())
+  viewCount           Int        @default(0)
+  likeCount           Int        @default(0)
+  commentCount        Int        @default(0)
+  shareCount          Int        @default(0)
+  watchTimeSeconds    Int        @default(0)
+  impressions         Int        @default(0)
+  clickThroughRate    Float?
+  averageViewDuration Float?
+  retentionRate       Float?
 
   @@index([platform])
 }
@@ -502,8 +535,8 @@ model ProjectCost {
   id              String   @id @default(cuid())
   projectId       String
   project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  provider        String   // anthropic | runway | elevenlabs | replicate
-  jobType         String   // script_analysis | video_generation | voice_generation
+  provider        String // anthropic | runway | elevenlabs | replicate
+  jobType         String // script_analysis | video_generation | voice_generation
   tokenCount      Int?
   durationSeconds Int?
   cost            Float
@@ -529,9 +562,9 @@ model Template {
   usageCount       Int      @default(0)
   sourceProjectId  String?
   thumbnailPath    String?
-  characterConfig  String?  @db.Text   // JSON array of character stubs
-  musicConfig      String?  @db.Text   // JSON: music cue preferences
-  generationConfig String?  @db.Text   // JSON: visual generation settings
+  characterConfig  String?  @db.Text // JSON array of character stubs
+  musicConfig      String?  @db.Text // JSON: music cue preferences
+  generationConfig String?  @db.Text // JSON: visual generation settings
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
@@ -545,7 +578,7 @@ model ProjectVersion {
   versionNumber  Int
   label          String
   scriptSnapshot String   @db.Text
-  configSnapshot String   @db.Text   // JSON: { name, platform, status }
+  configSnapshot String   @db.Text // JSON: { name, platform, status }
   createdAt      DateTime @default(now())
   createdBy      String   @default("user")
 

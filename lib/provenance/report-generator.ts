@@ -64,7 +64,11 @@ export async function generateProvenanceReport(
         musicCue: { include: { asset: true } },
       },
     }),
-    db.character.findMany({ where: { projectId }, orderBy: { createdAt: "asc" } }),
+    db.projectCharacter.findMany({
+      where: { projectId },
+      include: { character: true },
+      orderBy: { addedAt: "asc" },
+    }),
     db.scene.findMany({
       where: { projectId },
       include: { musicCue: { include: { asset: true } } },
@@ -146,14 +150,15 @@ export async function generateProvenanceReport(
       doc.fontSize(10).fillColor("#666666").text("No characters configured.");
       doc.fillColor("#000000");
     } else {
-      characters.forEach((char, i) => {
+      characters.forEach((cast, i) => {
+        const char = cast.character;
         doc.fontSize(11).font("Helvetica-Bold").text(`${i + 1}. ${char.name}`);
         doc.font("Helvetica");
         kvRow(doc, "Provider", "ElevenLabs");
         kvRow(doc, "License", "ElevenLabs Creator Plan — Commercial use permitted");
-        kvRow(doc, "Voice ID", char.elevenLabsVoiceId ?? "Not configured");
-        kvRow(doc, "Voice name", char.voiceName ?? "—");
-        kvRow(doc, "Fictional character confirmed", char.confirmedFictional ? "Yes ✓" : "No ✗");
+        kvRow(doc, "Voice ID", char.voiceId ?? "Not configured");
+        kvRow(doc, "Voice notes", char.voiceNotes ?? "—");
+        kvRow(doc, "Portrait prompt", char.portraitPrompt ? "Recorded" : "Not generated");
         doc.moveDown(0.5);
       });
     }

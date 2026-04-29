@@ -25,7 +25,7 @@ export async function GET(request: Request) {
   try {
     const lines = await db.dialogueLine.findMany({
       where: { shotId },
-      include: { character: { select: { id: true, name: true, elevenLabsVoiceId: true, speakingPace: true, emotionalRange: true } } },
+      include: { character: { select: { id: true, name: true, voiceId: true, voicePace: true, emotionalRange: true } } },
       orderBy: { lineIndex: "asc" },
     });
     return NextResponse.json({ data: lines, error: null });

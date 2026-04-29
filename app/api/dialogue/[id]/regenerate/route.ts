@@ -52,7 +52,7 @@ export async function POST(
     return NextResponse.json({ data: null, error: "Dialogue line not found" }, { status: 404 });
   }
 
-  if (!line.character?.elevenLabsVoiceId) {
+  if (!line.character?.voiceId) {
     return NextResponse.json(
       { data: null, error: "Character has no ElevenLabs voice configured" },
       { status: 422 }
@@ -89,8 +89,8 @@ export async function POST(
       lineIndex: line.lineIndex,
       text,
       deliveryDirection,
-      characterVoiceId: line.character.elevenLabsVoiceId,
-      speakingPace: (line.character.speakingPace as "slow" | "normal" | "fast") ?? "normal",
+      characterVoiceId: line.character.voiceId,
+      speakingPace: (line.character.voicePace as "slow" | "normal" | "fast") ?? "normal",
       emotionalRange: (line.character.emotionalRange as "restrained" | "moderate" | "expressive") ?? "moderate",
     };
 

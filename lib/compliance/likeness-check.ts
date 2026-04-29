@@ -176,3 +176,29 @@ export async function checkLikeness(
     return { outcome: "skipped", reason: `Check error: ${message}` };
   }
 }
+
+export async function checkImageLikeness(
+  imageBuffer: Buffer,
+  label: string
+): Promise<LikenessResult> {
+  const client = createRekognitionClient();
+
+  if (!client) {
+    const reason =
+      process.env.LIKENESS_CHECK_ENABLED !== "true"
+        ? "LIKENESS_CHECK_ENABLED is not set to 'true'"
+        : "AWS credentials not configured";
+
+    console.warn(`[likeness] Image check skipped for ${label}: ${reason}`);
+    return { outcome: "skipped", reason };
+  }
+
+  try {
+    console.log(`[likeness] Checking image ${label}...`);
+    return await checkWithRekognition(client, imageBuffer);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[likeness] Image check failed for ${label}:`, message);
+    return { outcome: "skipped", reason: `Check error: ${message}` };
+  }
+}
