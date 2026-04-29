@@ -8,8 +8,11 @@
  * After generation, the video is uploaded to Cloudflare R2.
  */
 
-import { uploadToR2, shotVideoKey } from "@/lib/storage";
+import { storage } from "@/lib/storage";
+import { shotPath, slugify } from "@/lib/storage/naming";
+import { appendGenerationLog } from "@/lib/storage/generation-log";
 import { recordRunwayCost } from "@/lib/analytics/cost-tracker";
+import { db } from "@/lib/db";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,6 +41,7 @@ export interface ShotConfig {
 
 export interface GenerationResult {
   r2Key: string;
+  backend: "local" | "r2";
   provider: "runway" | "replicate";
   durationSec: number;
   costUsd: number;
@@ -314,9 +318,28 @@ export async function generateShot(
     costUsd = REPLICATE_COST_FLAT;
   }
 
-  // Upload to R2
-  const r2Key = shotVideoKey(projectId, sceneId, shot.shotId);
-  await uploadToR2(r2Key, videoBuffer, "video/mp4");
+  const scene = await db.scene.findUnique({
+    where: { id: sceneId },
+    include: { project: { select: { id: true, projectSlug: true, name: true } } },
+  });
+  const projectSlug = scene?.project.projectSlug ?? slugify(scene?.project.name ?? projectId);
+  const characterSlug = slugify(shot.characters[0]?.name ?? "scene");
+  const filePath = shotPath(
+    projectSlug,
+    scene?.sceneNumber ?? 1,
+    shot.shotNumber,
+    shot.shotNumber,
+    shot.shotType,
+    characterSlug,
+    1
+  );
+  const stored = await storage.save(filePath, videoBuffer, "video/mp4", {
+    projectId,
+    sceneId,
+    shotId: shot.shotId,
+    generatedBy: provider,
+    model: provider === "runway" ? "gen3" : "replicate-fallback",
+  });
 
   // Record cost (fire-and-forget — never blocks generation)
   if (provider === "runway") {
@@ -324,10 +347,21 @@ export async function generateShot(
   }
 
   console.log(
-    `[video] Shot ${shot.shotNumber} complete — provider=${provider} cost=$${costUsd.toFixed(3)} key=${r2Key}`
+    `[video] Shot ${shot.shotNumber} complete — provider=${provider} cost=$${costUsd.toFixed(3)} key=${stored.path}`
   );
 
-  return { r2Key, provider, durationSec: shot.duration, costUsd };
+  await appendGenerationLog(projectSlug, {
+    timestamp: new Date().toISOString(),
+    type: "video",
+    provider,
+    model: provider === "runway" ? "gen3" : "replicate-fallback",
+    outputPath: stored.path,
+    durationSeconds: shot.duration,
+    cost: costUsd,
+    status: "success",
+  }).catch(() => undefined);
+
+  return { r2Key: stored.path, backend: stored.backend, provider, durationSec: shot.duration, costUsd };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

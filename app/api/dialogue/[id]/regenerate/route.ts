@@ -13,7 +13,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { generateSingleLine, type DialogueLineInput } from "@/lib/generators/dialogue";
-import { uploadToR2 } from "@/lib/storage";
+import { storage } from "@/lib/storage";
+import { dialoguePath, slugify } from "@/lib/storage/naming";
+import { appendGenerationLog } from "@/lib/storage/generation-log";
 
 const RegenerateSchema = z.object({
   text: z.string().min(1).max(5000).optional(),
@@ -44,7 +46,7 @@ export async function POST(
     where: { id: params.id },
     include: {
       character: true,
-      shot: { select: { id: true, sceneId: true, scene: { select: { projectId: true } } } },
+      shot: { select: { id: true, sceneId: true, scene: { select: { projectId: true, sceneNumber: true, project: { select: { projectSlug: true, name: true } } } } } },
     },
   });
 
@@ -98,15 +100,20 @@ export async function POST(
 
     const sceneId = line.shot.sceneId;
     const shotId = line.shot.id;
-    const r2Key = `projects/scenes/${sceneId}/shots/${shotId}/dialogue/line-${line.lineIndex}.mp3`;
-    await uploadToR2(r2Key, audioBuffer, "audio/mpeg");
+    const projectSlug = line.shot.scene.project.projectSlug ?? slugify(line.shot.scene.project.name);
+    const stored = await storage.save(
+      dialoguePath(projectSlug, line.shot.scene.sceneNumber, line.lineIndex + 1, line.character.name, line.lineIndex + 1, 1).replace(/\.wav$/, ".mp3"),
+      audioBuffer,
+      "audio/mpeg",
+      { sceneId, shotId, dialogueLineId: line.id, provider: "elevenlabs" }
+    );
 
     // Update line record
     await db.dialogueLine.update({
       where: { id: params.id },
       data: {
         status: "COMPLETE",
-        audioPath: r2Key,
+        audioPath: stored.path,
         durationSec: estimatedDurationSec,
       },
     });
@@ -122,9 +129,20 @@ export async function POST(
       },
     });
 
-    console.log(`[ADR] Line ${line.lineIndex} regenerated — ${r2Key}`);
+    await appendGenerationLog(projectSlug, {
+      timestamp: new Date().toISOString(),
+      type: "dialogue",
+      provider: "elevenlabs",
+      model: "tts",
+      outputPath: stored.path,
+      durationSeconds: estimatedDurationSec,
+      cost: 0,
+      status: "success",
+    }).catch(() => undefined);
+
+    console.log(`[ADR] Line ${line.lineIndex} regenerated — ${stored.path}`);
     return NextResponse.json({
-      data: { r2Key, estimatedDurationSec, shotStale: true },
+      data: { r2Key: stored.path, estimatedDurationSec, shotStale: true },
       error: null,
     });
   } catch (err) {

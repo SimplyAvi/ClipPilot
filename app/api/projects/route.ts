@@ -7,6 +7,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { z } from "zod";
+import { storage } from "@/lib/storage";
+import { slugify } from "@/lib/storage/naming";
 
 export async function GET() {
   try {
@@ -57,14 +59,41 @@ export async function POST(request: Request) {
       );
     }
 
+    const projectSlug = await uniqueProjectSlug(parsed.data.name);
     const project = await db.project.create({
       data: {
         name: parsed.data.name,
         platform: parsed.data.platform ?? null,
+        projectSlug,
       },
     });
 
-    return NextResponse.json({ data: project, error: null }, { status: 201 });
+    await storage.initProjectFolders(projectSlug, parsed.data.name);
+    await storage.save(
+      `${projectSlug}/_manifest.json`,
+      Buffer.from(
+        JSON.stringify(
+          {
+            projectId: project.id,
+            projectSlug,
+            projectName: parsed.data.name,
+            createdAt: new Date().toISOString(),
+            storageVersion: "1.0",
+            backend: storage.backend(),
+          },
+          null,
+          2
+        )
+      ),
+      "application/json"
+    );
+
+    const updated = await db.project.update({
+      where: { id: project.id },
+      data: { storageFolderInitialized: true },
+    });
+
+    return NextResponse.json({ data: updated, error: null }, { status: 201 });
   } catch (error) {
     console.error("[POST /api/projects]", error);
     return NextResponse.json(
@@ -72,4 +101,14 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+async function uniqueProjectSlug(projectName: string): Promise<string> {
+  const base = slugify(projectName) || "project";
+  let candidate = base;
+  let suffix = 2;
+  while (await db.project.findUnique({ where: { projectSlug: candidate } })) {
+    candidate = `${base}_${suffix++}`.slice(0, 48);
+  }
+  return candidate;
 }

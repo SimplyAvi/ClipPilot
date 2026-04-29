@@ -15,7 +15,8 @@ import path from "path";
 import os from "os";
 import fs from "fs/promises";
 import { db } from "@/lib/db";
-import { downloadFromR2, uploadToR2 } from "@/lib/storage";
+import { downloadFromR2, storage } from "@/lib/storage";
+import { slugify, thumbnailPath } from "@/lib/storage/naming";
 import { extractBestFrame } from "@/lib/thumbnails/frame-extractor";
 import {
   generateImpactFrame,
@@ -144,11 +145,11 @@ export async function POST(request: NextRequest) {
     for (const variant of [variantA, variantB, variantC]) {
       if (!variant) continue;
 
-      const prefix = `projects/${projectId}/thumbnails/${variant.variant.toLowerCase()}`;
+      const projectSlug = project.projectSlug ?? slugify(project.name);
       const [youtubeKey, tiktokKey, squareKey] = await Promise.all([
-        uploadToR2(`${prefix}/youtube.jpg`, variant.youtubeBuffer, "image/jpeg"),
-        uploadToR2(`${prefix}/tiktok.jpg`, variant.tiktokBuffer, "image/jpeg"),
-        uploadToR2(`${prefix}/square.jpg`, variant.squareBuffer, "image/jpeg"),
+        storage.save(thumbnailPath(projectSlug, variant.variant.toLowerCase(), "youtube"), variant.youtubeBuffer, "image/jpeg"),
+        storage.save(thumbnailPath(projectSlug, variant.variant.toLowerCase(), "tiktok"), variant.tiktokBuffer, "image/jpeg"),
+        storage.save(thumbnailPath(projectSlug, variant.variant.toLowerCase(), "square"), variant.squareBuffer, "image/jpeg"),
       ]);
 
       // Delete any existing record for this variant+project and re-create
@@ -160,9 +161,9 @@ export async function POST(request: NextRequest) {
         data: {
           projectId,
           variant: variant.variant,
-          youtubeR2Key: youtubeKey,
-          tiktokR2Key: tiktokKey,
-          squareR2Key: squareKey,
+          youtubeR2Key: youtubeKey.path,
+          tiktokR2Key: tiktokKey.path,
+          squareR2Key: squareKey.path,
           titleText: textOptions.title,
           fontSize: textOptions.fontSize,
           textColor: textOptions.textColor,

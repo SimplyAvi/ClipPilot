@@ -19,7 +19,10 @@
 import pathModule from "path";
 import os from "os";
 import fs from "fs/promises";
-import { downloadFromR2, uploadToR2 } from "@/lib/storage";
+import { downloadFromR2, storage } from "@/lib/storage";
+import { exportPath, slugify } from "@/lib/storage/naming";
+import { appendGenerationLog } from "@/lib/storage/generation-log";
+import { db } from "@/lib/db";
 
 // ─── Platform specs ───────────────────────────────────────────────────────────
 
@@ -142,14 +145,26 @@ async function runFinalAssembly(
   await applyOverlaysAndScale(ffmpeg, concatPath, finalPath, spec, safeName);
 
   // 4. Upload
-  const r2Key = `projects/${projectId}/exports/${exportId}/${input.platform.toLowerCase()}.mp4`;
+  const project = await db.project.findUnique({ where: { id: projectId }, select: { projectSlug: true, name: true } });
+  const projectSlug = project?.projectSlug ?? slugify(project?.name ?? projectName);
+  const r2Key = exportPath(projectSlug, input.platform.toLowerCase(), 1);
   const fileBuf = await fs.readFile(finalPath);
-  await uploadToR2(r2Key, fileBuf, "video/mp4");
+  const stored = await storage.save(r2Key, fileBuf, "video/mp4", { projectId, exportId, platform: input.platform });
+  await appendGenerationLog(projectSlug, {
+    timestamp: new Date().toISOString(),
+    type: "export",
+    provider: "ffmpeg",
+    model: "final-assembler",
+    outputPath: stored.path,
+    durationSeconds: input.totalDurationSec + AI_DISCLOSURE_DURATION + TITLE_CARD_DURATION * 2,
+    cost: 0,
+    status: "success",
+  }).catch(() => undefined);
 
-  console.log(`[final-assembler] Export ${exportId} → ${r2Key}`);
+  console.log(`[final-assembler] Export ${exportId} → ${stored.path}`);
 
   return {
-    videoR2Key: r2Key,
+    videoR2Key: stored.path,
     durationSec: input.totalDurationSec + AI_DISCLOSURE_DURATION + TITLE_CARD_DURATION * 2,
     fileSizeBytes: fileBuf.length,
     aiDisclosureApplied: true,

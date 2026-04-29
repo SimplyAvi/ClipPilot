@@ -168,6 +168,8 @@ async function processSceneGeneration(job: Job<SceneGenJobData>) {
         data: {
           status: shotStatus,
           generatedVideoPath: result.r2Key,
+          storagePath: result.r2Key,
+          storageBackend: result.backend,
           prompt: buildPromptSummary(shot, styleConfig),
           likenessChecked,
           likenessCheckPassed,

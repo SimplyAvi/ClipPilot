@@ -19,7 +19,9 @@ import pathModule from "path";
 import os from "os";
 import fs from "fs/promises";
 import { copyFileSync } from "fs";
-import { downloadFromR2, uploadToR2 } from "@/lib/storage";
+import { downloadFromR2, storage } from "@/lib/storage";
+import { slugify } from "@/lib/storage/naming";
+import { db } from "@/lib/db";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,7 +72,12 @@ async function runMix(
   tmpDir: string
 ): Promise<MixOutput> {
   const ffmpeg = await loadFfmpeg();
-  const basePath = `projects/scenes/${sceneId}/shots/${shotId}/audio`;
+  const scene = await db.scene.findUnique({
+    where: { id: sceneId },
+    include: { project: { select: { projectSlug: true, name: true } } },
+  });
+  const projectSlug = scene?.project.projectSlug ?? slugify(scene?.project.name ?? "project");
+  const basePath = `${projectSlug}/03_scenes/sc${String(scene?.sceneNumber ?? 1).padStart(2, "0")}/audio/shot_${shotId}`;
 
   // ── Download dialogue tracks ──
   const dlLocalPaths: Array<{ path: string; startTimeSec: number }> = [];
@@ -98,7 +105,7 @@ async function runMix(
   await buildDialogueStem(ffmpeg, dlLocalPaths, input.totalDurationSec, dialogueStemLocal);
 
   const dialogueStemR2Key = `${basePath}/dialogue-stem.mp3`;
-  await uploadToR2(dialogueStemR2Key, await fs.readFile(dialogueStemLocal), "audio/mpeg");
+  const dialogueStem = await storage.save(dialogueStemR2Key, await fs.readFile(dialogueStemLocal), "audio/mpeg", { sceneId, shotId, type: "dialogue-stem" });
 
   // ── Build music stem ──
   let musicStemR2Key: string | null = null;
@@ -117,7 +124,8 @@ async function runMix(
       musicStemLocal
     );
     musicStemR2Key = `${basePath}/music-stem.mp3`;
-    await uploadToR2(musicStemR2Key, await fs.readFile(musicStemLocal), "audio/mpeg");
+    const musicStem = await storage.save(musicStemR2Key, await fs.readFile(musicStemLocal), "audio/mpeg", { sceneId, shotId, type: "music-stem" });
+    musicStemR2Key = musicStem.path;
   }
 
   // ── Build full mix ──
@@ -125,10 +133,10 @@ async function runMix(
   await buildFullMix(ffmpeg, dialogueStemLocal, musicStemLocal, input.totalDurationSec, fullMixLocal);
 
   const fullMixR2Key = `${basePath}/full-mix.mp3`;
-  await uploadToR2(fullMixR2Key, await fs.readFile(fullMixLocal), "audio/mpeg");
+  const fullMix = await storage.save(fullMixR2Key, await fs.readFile(fullMixLocal), "audio/mpeg", { sceneId, shotId, type: "full-mix" });
 
   console.log(`[audio-mix] Scene ${sceneId} shot ${shotId} — done`);
-  return { fullMixR2Key, dialogueStemR2Key, musicStemR2Key };
+  return { fullMixR2Key: fullMix.path, dialogueStemR2Key: dialogueStem.path, musicStemR2Key };
 }
 
 // ─── FFmpeg sub-functions ─────────────────────────────────────────────────────

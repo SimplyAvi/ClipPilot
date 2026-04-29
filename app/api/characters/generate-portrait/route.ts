@@ -3,7 +3,9 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { checkImageLikeness } from "@/lib/compliance/likeness-check";
 import { getProviderKey } from "@/lib/provider-keys";
-import { uploadToR2 } from "@/lib/storage";
+import { storage } from "@/lib/storage";
+import { characterPortraitPath, slugify } from "@/lib/storage/naming";
+import { appendGenerationLog } from "@/lib/storage/generation-log";
 
 const GeneratePortraitSchema = z.object({
   characterId: z.string().min(1),
@@ -50,7 +52,10 @@ export async function POST(request: Request) {
   }
 
   const { characterId, physicalDescription, age, gender, ethnicity, style } = parsed.data;
-  const character = await db.character.findUnique({ where: { id: characterId } });
+  const character = await db.character.findUnique({
+    where: { id: characterId },
+    include: { projectCharacters: { include: { project: { select: { projectSlug: true, name: true } } }, take: 1 } },
+  });
   if (!character) {
     return NextResponse.json({ data: null, error: "Character not found" }, { status: 404 });
   }
@@ -99,12 +104,28 @@ Entirely fictional person - not based on or resembling any real person, living o
           };
         }
 
-        const key = `characters/${characterId}/portraits/${Date.now()}-${index + 1}.png`;
-        await uploadToR2(key, imageBuffer, imageRes.headers.get("content-type") ?? "image/png");
-        await db.characterPortraitGeneration.create({
-          data: { characterId, imagePath: key, prompt: portraitPrompt, style },
+        const projectSlug =
+          character.projectCharacters?.[0]?.project.projectSlug ??
+          (character.projectCharacters?.[0]?.project.name ? slugify(character.projectCharacters[0].project.name) : "character_library");
+        const key = characterPortraitPath(projectSlug, slugify(character.name), Date.now() + index);
+        const stored = await storage.save(key, imageBuffer, imageRes.headers.get("content-type") ?? "image/png", {
+          characterId,
+          provider: "replicate",
+          style,
         });
-        return { url: key, flagged: false, message: null, reason: null };
+        await db.characterPortraitGeneration.create({
+          data: { characterId, imagePath: stored.path, prompt: portraitPrompt, style },
+        });
+        await appendGenerationLog(projectSlug, {
+          timestamp: new Date().toISOString(),
+          type: "image",
+          provider: "replicate",
+          model: "stability-ai/sdxl",
+          outputPath: stored.path,
+          cost: 0,
+          status: "success",
+        }).catch(() => undefined);
+        return { url: stored.path, flagged: false, message: null, reason: null };
       })
     );
 

@@ -106,20 +106,29 @@ model ProviderKey {
   updatedAt    DateTime  @updatedAt
 }
 
+model StorageSetting {
+  id              String   @id @default(cuid())
+  localRootPath   String?
+  useLocalStorage Boolean  @default(true)
+  updatedAt       DateTime @updatedAt
+}
+
 model Project {
-  id            String        @id @default(cuid())
-  name          String
-  status        ProjectStatus @default(DRAFT)
-  platform      String? // youtube | tiktok | instagram | youtube_shorts
-  thumbnailPath String? // R2 key of selected thumbnail (denormalized for fast list queries)
-  completedAt   DateTime?
-  archivedAt    DateTime?
+  id                       String        @id @default(cuid())
+  name                     String
+  status                   ProjectStatus @default(DRAFT)
+  platform                 String? // youtube | tiktok | instagram | youtube_shorts
+  thumbnailPath            String? // R2 key of selected thumbnail (denormalized for fast list queries)
+  completedAt              DateTime?
+  archivedAt               DateTime?
   // Style metadata (set at analysis time, used for insights)
-  genre         String?
-  tone          String?
-  targetLength  String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  genre                    String?
+  tone                     String?
+  targetLength             String?
+  projectSlug              String?       @unique
+  storageFolderInitialized Boolean       @default(false)
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
 
   scripts           Script[]
   assets            Asset[]
@@ -264,14 +273,16 @@ model Job {
 }
 
 model Scene {
-  id          String      @id @default(cuid())
-  projectId   String
-  sceneNumber Int
-  title       String
-  location    String?
-  timeOfDay   String?
-  status      SceneStatus @default(DRAFT)
-  createdAt   DateTime    @default(now())
+  id               String      @id @default(cuid())
+  projectId        String
+  sceneNumber      Int
+  title            String
+  location         String?
+  timeOfDay        String?
+  status           SceneStatus @default(DRAFT)
+  assembledPath    String?
+  assembledBackend String?
+  createdAt        DateTime    @default(now())
 
   project  Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
   shots    Shot[]
@@ -285,6 +296,8 @@ model Shot {
   shotType           String
   duration           Float      @default(3.0)
   generatedVideoPath String?
+  storageBackend     String     @default("local")
+  storagePath        String?
   thumbnailPath      String?
   status             ShotStatus @default(DRAFT)
 

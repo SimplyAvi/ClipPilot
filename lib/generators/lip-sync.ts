@@ -9,7 +9,9 @@
  * so the pipeline continues without lip sync.
  */
 
-import { getSignedViewUrl, uploadToR2 } from "@/lib/storage";
+import { getSignedViewUrl, storage } from "@/lib/storage";
+import { lipSyncPath, slugify } from "@/lib/storage/naming";
+import { db } from "@/lib/db";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -142,11 +144,21 @@ export async function lipSyncShot(
         }
 
         const buffer = Buffer.from(await dlRes.arrayBuffer());
-        const r2Key = `projects/${projectId}/scenes/${sceneId}/shots/${shotId}/lipsync.mp4`;
-        await uploadToR2(r2Key, buffer, "video/mp4");
+        const scene = await db.scene.findUnique({
+          where: { id: sceneId },
+          include: { project: { select: { projectSlug: true, name: true } } },
+        });
+        const projectSlug = scene?.project.projectSlug ?? slugify(scene?.project.name ?? projectId);
+        const r2Key = lipSyncPath(projectSlug, scene?.sceneNumber ?? 1, 1, 1, 1);
+        const stored = await storage.save(r2Key, buffer, "video/mp4", {
+          projectId,
+          sceneId,
+          shotId,
+          provider: "synclabs",
+        });
 
-        console.log(`[lip-sync] Shot ${shotId} complete — ${r2Key}`);
-        return { status: "COMPLETE", r2Key };
+        console.log(`[lip-sync] Shot ${shotId} complete — ${stored.path}`);
+        return { status: "COMPLETE", r2Key: stored.path };
       }
 
       if (job.status === "failed") {

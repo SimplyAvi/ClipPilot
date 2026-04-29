@@ -8,6 +8,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { storage } from "@/lib/storage";
+import { slugify } from "@/lib/storage/naming";
 
 export async function POST(
   _req: NextRequest,
@@ -29,13 +31,16 @@ export async function POST(
   }
 
   // Create the duplicate project
+  const projectSlug = await uniqueProjectSlug(`${source.name} Copy`);
   const duplicate = await db.project.create({
     data: {
       name: `${source.name} — Copy`,
       status: "DRAFT",
       platform: source.platform,
+      projectSlug,
     },
   });
+  await storage.initProjectFolders(projectSlug, duplicate.name);
 
   // Copy the latest script
   const latestScript = source.scripts[0];
@@ -61,5 +66,20 @@ export async function POST(
     });
   }
 
-  return NextResponse.json({ data: duplicate }, { status: 201 });
+  const updated = await db.project.update({
+    where: { id: duplicate.id },
+    data: { storageFolderInitialized: true },
+  });
+
+  return NextResponse.json({ data: updated }, { status: 201 });
+}
+
+async function uniqueProjectSlug(projectName: string): Promise<string> {
+  const base = slugify(projectName) || "project";
+  let candidate = base;
+  let suffix = 2;
+  while (await db.project.findUnique({ where: { projectSlug: candidate } })) {
+    candidate = `${base}_${suffix++}`.slice(0, 48);
+  }
+  return candidate;
 }

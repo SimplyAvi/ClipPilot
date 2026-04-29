@@ -14,7 +14,9 @@
  */
 
 import { textToSpeech, buildVoiceSettings, applyPaceToText } from "@/lib/voice-client";
-import { uploadToR2 } from "@/lib/storage";
+import { storage } from "@/lib/storage";
+import { dialoguePath, slugify } from "@/lib/storage/naming";
+import { appendGenerationLog } from "@/lib/storage/generation-log";
 import { db } from "@/lib/db";
 import { recordElevenLabsCost } from "@/lib/analytics/cost-tracker";
 
@@ -107,8 +109,17 @@ export async function generateShotDialogue(
     try {
       const { audioBuffer, estimatedDurationSec } = await generateSingleLine(line);
 
-      const r2Key = `projects/scenes/${sceneId}/shots/${shotId}/dialogue/line-${line.lineIndex}.mp3`;
-      await uploadToR2(r2Key, audioBuffer, "audio/mpeg");
+      const shot = await db.shot.findUnique({
+        where: { id: shotId },
+        include: { scene: { include: { project: { select: { projectSlug: true, name: true } } } } },
+      });
+      const projectSlug = shot?.scene.project.projectSlug ?? slugify(shot?.scene.project.name ?? "project");
+      const stored = await storage.save(
+        dialoguePath(projectSlug, shot?.scene.sceneNumber ?? 1, line.lineIndex + 1, "character", line.lineIndex + 1, 1).replace(/\.wav$/, ".mp3"),
+        audioBuffer,
+        "audio/mpeg",
+        { sceneId, shotId, dialogueLineId: line.id, provider: "elevenlabs" }
+      );
 
       const startTimeSec = cursor;
       const endTimeSec = cursor + estimatedDurationSec;
@@ -118,7 +129,7 @@ export async function generateShotDialogue(
         where: { id: line.id },
         data: {
           status: "COMPLETE",
-          audioPath: r2Key,
+          audioPath: stored.path,
           startTimeSec,
           endTimeSec,
           durationSec: estimatedDurationSec,
@@ -130,7 +141,18 @@ export async function generateShotDialogue(
         void recordElevenLabsCost(projectId, line.text.length);
       }
 
-      timings.push({ lineId: line.id, audioPath: r2Key, startTimeSec, endTimeSec, durationSec: estimatedDurationSec });
+      await appendGenerationLog(projectSlug, {
+        timestamp: new Date().toISOString(),
+        type: "dialogue",
+        provider: "elevenlabs",
+        model: "tts",
+        outputPath: stored.path,
+        durationSeconds: estimatedDurationSec,
+        cost: 0,
+        status: "success",
+      }).catch(() => undefined);
+
+      timings.push({ lineId: line.id, audioPath: stored.path, startTimeSec, endTimeSec, durationSec: estimatedDurationSec });
       console.log(`[dialogue] Line ${line.lineIndex} done — ~${estimatedDurationSec.toFixed(2)}s`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

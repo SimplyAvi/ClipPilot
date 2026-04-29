@@ -19,6 +19,7 @@ import {
   LayoutTemplate,
   BarChart2,
   UserRound,
+  FolderOpen as FolderFiles,
 } from "lucide-react";
 
 // ─── Status dot colours (matches project-dashboard.tsx) ───────────────────────
@@ -213,6 +214,7 @@ export function Sidebar() {
               { href: `/projects/${projectId}/thumbnails`, label: "Thumbnails", Icon: ImageIcon },
               { href: `/projects/${projectId}/publish`, label: "Publish", Icon: Share2 },
               { href: `/projects/${projectId}/versions`, label: "Versions", Icon: History },
+              { href: `/projects/${projectId}/files`, label: "Files", Icon: FolderFiles },
             ].map(({ href, label, Icon }) => (
               <Link
                 key={href}

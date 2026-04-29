@@ -17,7 +17,8 @@
 
 import crypto from "crypto";
 import { db } from "@/lib/db";
-import { uploadToR2 } from "@/lib/storage";
+import { storage } from "@/lib/storage";
+import { provenanceReportPath, slugify } from "@/lib/storage/naming";
 import type { Platform } from "@/lib/assembler/final-assembler";
 import { PLATFORM_SPECS } from "@/lib/assembler/final-assembler";
 
@@ -218,11 +219,15 @@ export async function generateProvenanceReport(
   });
 
   const pdfBuffer = Buffer.concat(chunks);
-  const r2Key = `projects/${projectId}/exports/${exportId}/provenance-report.pdf`;
-  await uploadToR2(r2Key, pdfBuffer, "application/pdf");
+  const r2Key = provenanceReportPath(project.projectSlug ?? slugify(project.name));
+  const stored = await storage.save(r2Key, pdfBuffer, "application/pdf", {
+    projectId,
+    exportId,
+    type: "provenance",
+  });
 
-  console.log(`[provenance] Report uploaded → ${r2Key}`);
-  return r2Key;
+  console.log(`[provenance] Report uploaded → ${stored.path}`);
+  return stored.path;
 }
 
 // ─── PDF helpers ──────────────────────────────────────────────────────────────

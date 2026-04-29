@@ -22,7 +22,10 @@ import pathModule from "path";
 import os from "os";
 import fs from "fs/promises";
 import { createWriteStream } from "fs";
-import { downloadFromR2, uploadToR2 } from "@/lib/storage";
+import { downloadFromR2, storage } from "@/lib/storage";
+import { sceneAssemblyPath, slugify } from "@/lib/storage/naming";
+import { appendGenerationLog } from "@/lib/storage/generation-log";
+import { db } from "@/lib/db";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -145,12 +148,31 @@ async function runAssembly(
   await muxAndGrade(ffmpeg, concatVideoPath, hasAudio ? sceneAudioPath : null, applyColorGrade, outputPath);
 
   const totalDuration = usableShots.reduce((sum, s) => sum + s.duration, 0);
-  const r2Key = `projects/${projectId}/assembly/scenes/scene-${sceneNumber}.mp4`;
+  const scene = await db.scene.findUnique({
+    where: { id: sceneId },
+    include: { project: { select: { projectSlug: true, name: true } } },
+  });
+  const projectSlug = scene?.project.projectSlug ?? slugify(scene?.project.name ?? projectId);
+  const r2Key = sceneAssemblyPath(projectSlug, sceneNumber, scene?.location ?? "scene", 1);
   const buf = await fs.readFile(outputPath);
-  await uploadToR2(r2Key, buf, "video/mp4");
+  const stored = await storage.save(r2Key, buf, "video/mp4", { projectId, sceneId, type: "scene-assembly" });
+  await db.scene.update({
+    where: { id: sceneId },
+    data: { assembledPath: stored.path, assembledBackend: stored.backend },
+  }).catch(() => undefined);
+  await appendGenerationLog(projectSlug, {
+    timestamp: new Date().toISOString(),
+    type: "video",
+    provider: "ffmpeg",
+    model: "scene-assembler",
+    outputPath: stored.path,
+    durationSeconds: totalDuration,
+    cost: 0,
+    status: "success",
+  }).catch(() => undefined);
 
-  console.log(`[scene-assembler] Scene ${sceneNumber} assembled → ${r2Key}`);
-  return { sceneVideoR2Key: r2Key, durationSec: totalDuration };
+  console.log(`[scene-assembler] Scene ${sceneNumber} assembled → ${stored.path}`);
+  return { sceneVideoR2Key: stored.path, durationSec: totalDuration };
 }
 
 // ─── FFmpeg helpers ───────────────────────────────────────────────────────────
