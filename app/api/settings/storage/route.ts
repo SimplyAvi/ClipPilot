@@ -1,3 +1,4 @@
+import fs from "fs";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -52,6 +53,16 @@ export async function POST(request: Request) {
   const parsed = SaveStorageSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ data: null, error: parsed.error.errors[0].message }, { status: 400 });
+  }
+
+  // Ensure the directory exists on disk
+  try {
+    fs.mkdirSync(parsed.data.localRootPath, { recursive: true });
+  } catch {
+    return NextResponse.json(
+      { data: null, error: "Could not create storage folder — check that the path is valid and you have write permissions." },
+      { status: 400 }
+    );
   }
 
   const current = await db.storageSetting.findFirst({ orderBy: { updatedAt: "desc" } });

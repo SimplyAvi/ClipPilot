@@ -19,14 +19,22 @@ export async function POST(request: Request) {
   }
 
   const target = parsed.data.path;
-  const exists = fs.existsSync(target);
+  let exists = fs.existsSync(target);
   let writable = false;
   let freeSpaceGB = 0;
   let error: string | undefined;
 
   if (!exists) {
-    error = "Path not found - check the folder exists";
-  } else {
+    // Auto-create the directory rather than just erroring
+    try {
+      fs.mkdirSync(target, { recursive: true });
+      exists = true;
+    } catch (mkdirErr) {
+      error = `Could not create folder: ${mkdirErr instanceof Error ? mkdirErr.message : "unknown error"}`;
+    }
+  }
+
+  if (exists) {
     try {
       fs.accessSync(target, fs.constants.W_OK);
       writable = true;
