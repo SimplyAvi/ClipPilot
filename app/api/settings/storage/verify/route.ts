@@ -1,7 +1,12 @@
 import fs from "fs";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import checkDiskSpace from "check-disk-space";
+
+// check-disk-space ships a dual ESM/CJS build; the ESM version uses node: protocol
+// imports that webpack can't resolve, so we use require().default which is reliable.
+type DiskSpaceResult = { free: number; size: number; diskPath: string };
+const checkDiskSpace: (path: string) => Promise<DiskSpaceResult> =
+  (require("check-disk-space") as { default: (path: string) => Promise<DiskSpaceResult> }).default;
 
 const VerifySchema = z.object({ path: z.string().min(1) });
 

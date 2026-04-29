@@ -67,8 +67,10 @@ export function StorageTab({ envStatus }: Props) {
       showDirectoryPicker?: () => Promise<{ name: string }>;
     }).showDirectoryPicker;
     if (!picker) return;
+    // Note: the browser File System Access API only returns the folder name,
+    // not the full OS path. Type the full absolute path manually for best results.
     const dir = await picker();
-    setPath(path ? `${path.replace(/\/$/, "")}/${dir.name}` : dir.name);
+    setPath(dir.name);
   }
 
   async function verifyPath() {

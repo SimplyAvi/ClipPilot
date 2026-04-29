@@ -17,6 +17,7 @@ const nextConfig = {
     "@ffmpeg-installer/win32-ia32",
     "@ffmpeg-installer/win32-x64",
     "node-vibrant",
+    "check-disk-space",
   ],
   webpack: (config) => {
     // pdf-parse uses a canvas dependency that isn't needed for text extraction
