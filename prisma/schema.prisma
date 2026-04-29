@@ -127,6 +127,9 @@ model Project {
   targetLength             String?
   projectSlug              String?       @unique
   storageFolderInitialized Boolean       @default(false)
+  // Theme
+  themeId                  String?
+  theme                    Theme?        @relation(fields: [themeId], references: [id])
   createdAt                DateTime      @default(now())
   updatedAt                DateTime      @updatedAt
 
@@ -580,6 +583,51 @@ model Template {
   generationConfig String?  @db.Text // JSON: visual generation settings
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+}
+
+// ─── Phase 15: Theme Creation System ─────────────────────────────────────────
+
+model Theme {
+  id                     String    @id @default(cuid())
+  name                   String
+  description            String?   @db.Text
+  sourceUrl              String?
+  sourcePlatform         String?   // youtube | instagram | facebook | manual
+  referenceFramePaths    String?   @db.Text  // JSON array of local frame paths
+  coverFrameIndex        Int       @default(0)
+  colorPalette           String?   // JSON array of hex strings
+  colorMood              String?
+  colorTemperature       String?   // cool | neutral | warm
+  saturation             String?   // desaturated | muted | normal | vivid
+  contrast               String?   // low | medium | high
+  genre                  String?
+  tone                   String?
+  visualStyle            String?
+  audioStyle             String?
+  lightingStyle          String?
+  cameraMovement         String?
+  dominantShotTypes      String?   // JSON array
+  pacing                 String?
+  avgShotDurationSeconds Float?
+  characterAgeRange      String?
+  characterAppearance    String?   @db.Text
+  characterMood          String?
+  primaryEnvironment     String?
+  timeOfDay              String?   // JSON array
+  environmentDescription String?   @db.Text
+  musicGenre             String?
+  musicMood              String?
+  musicTempo             String?
+  audioNotes             String?   @db.Text
+  visualPromptModifier   String?   @db.Text
+  audioPromptModifier    String?   @db.Text
+  cinematographyNotes    String?   @db.Text
+  analysisRawJson        String?   @db.Text
+  usageCount             Int       @default(0)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  projectsUsingTheme     Project[]
 }
 
 // ─── Phase 12: Project Version History ───────────────────────────────────────

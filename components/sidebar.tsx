@@ -20,6 +20,7 @@ import {
   BarChart2,
   UserRound,
   FolderOpen as FolderFiles,
+  Palette,
 } from "lucide-react";
 
 // ─── Status dot colours (matches project-dashboard.tsx) ───────────────────────
@@ -46,6 +47,7 @@ interface RecentProject {
 const navItems = [
   { label: "Projects", href: "/", icon: FolderOpen },
   { label: "Characters", href: "/characters", icon: UserRound, count: true },
+  { label: "Themes", href: "/themes", icon: Palette },
   { label: "Templates", href: "/templates", icon: LayoutTemplate },
   { label: "Analytics", href: "/analytics", icon: BarChart2 },
   { label: "Assets", href: "/assets", icon: Image },
