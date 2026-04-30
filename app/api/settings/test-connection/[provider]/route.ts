@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getProviderKey, markProviderKeyVerified } from "@/lib/provider-keys";
+import { testMubertCredentials } from "@/lib/music/mubert-client";
 
 async function testAnthropic(): Promise<{ connected: boolean; message: string }> {
   const apiKey = await getProviderKey("anthropic");
@@ -47,7 +48,7 @@ async function testRunway(): Promise<{ connected: boolean; message: string }> {
   const key = await getProviderKey("runway");
   if (!key) return { connected: false, message: "RUNWAYML_API_SECRET is not configured" };
   try {
-    const res = await fetch("https://api.runwayml.com/v1/organization", {
+    const res = await fetch("https://api.dev.runwayml.com/v1/organization", {
       headers: {
         Authorization: `Bearer ${key}`,
         "X-Runway-Version": "2024-11-06",
@@ -126,10 +127,12 @@ async function testR2(): Promise<{ connected: boolean; message: string }> {
 }
 
 async function testMubert(): Promise<{ connected: boolean; message: string }> {
-  const key = await getProviderKey("mubert");
-  return key
-    ? { connected: true, message: "MUBERT_API_KEY is configured" }
-    : { connected: false, message: "MUBERT_API_KEY is not configured" };
+  try {
+    const result = await testMubertCredentials();
+    return { connected: result.ok, message: result.message };
+  } catch (err) {
+    return { connected: false, message: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 async function testOpenAI(): Promise<{ connected: boolean; message: string }> {

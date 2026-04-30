@@ -40,6 +40,7 @@ export interface DashboardProject {
   archivedAt: string | null;
   _count: { scenes: number; assets: number; jobs: number; posts: number };
   exports: { id: string; platform: string; createdAt: string }[];
+  theme?: { id: string; name: string; colorPalette: string | null } | null;
 }
 
 export interface QuickStartTemplate {
@@ -104,6 +105,17 @@ function getPlatformLabel(project: DashboardProject): string {
   const exp = project.exports[0];
   if (exp) return PLATFORM_LABELS[exp.platform] ?? exp.platform;
   return "—";
+}
+
+function getThemeColor(project: DashboardProject): string | null {
+  const raw = project.theme?.colorPalette;
+  if (!raw) return null;
+  try {
+    const colors = JSON.parse(raw);
+    return Array.isArray(colors) && typeof colors[0] === "string" ? colors[0] : null;
+  } catch {
+    return null;
+  }
 }
 
 // ─── Thumbnail placeholder ────────────────────────────────────────────────────
@@ -582,7 +594,18 @@ export default function ProjectDashboard({ initialProjects, thumbnailUrls, quick
                       {getPlatformLabel(p)}
                     </p>
                   )}
+                  {p.theme && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Theme: {p.theme.name}
+                    </p>
+                  )}
                 </div>
+                {p.theme && (
+                  <div
+                    className="h-1 w-full"
+                    style={{ backgroundColor: getThemeColor(p) ?? "hsl(var(--primary))" }}
+                  />
+                )}
               </Link>
             ))}
           </div>
@@ -673,6 +696,12 @@ export default function ProjectDashboard({ initialProjects, thumbnailUrls, quick
                     p.status === "ARCHIVED" ? "opacity-60" : ""
                   }`}
                 >
+                  {p.theme && (
+                    <div
+                      className="absolute inset-x-0 bottom-0 z-10 h-1"
+                      style={{ backgroundColor: getThemeColor(p) ?? "hsl(var(--primary))" }}
+                    />
+                  )}
                   {/* Thumbnail */}
                   <Link href={`/projects/${p.id}`} className="block">
                     <div className="aspect-video w-full overflow-hidden bg-muted">
@@ -697,6 +726,12 @@ export default function ProjectDashboard({ initialProjects, thumbnailUrls, quick
                       </div>
 
                       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        {p.theme && (
+                          <span className="flex items-center gap-1">
+                            <Sparkles className="h-3 w-3" />
+                            {p.theme.name}
+                          </span>
+                        )}
                         {getPlatformLabel(p) !== "—" && (
                           <span className="flex items-center gap-1">
                             <Youtube className="h-3 w-3" />

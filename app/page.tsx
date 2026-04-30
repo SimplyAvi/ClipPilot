@@ -31,6 +31,9 @@ async function getAllProjects(): Promise<DashboardProject[]> {
         take: 1,
         select: { id: true, platform: true, createdAt: true },
       },
+      theme: {
+        select: { id: true, name: true, colorPalette: true },
+      },
     },
   });
 
@@ -51,6 +54,7 @@ async function getAllProjects(): Promise<DashboardProject[]> {
       platform: e.platform,
       createdAt: e.createdAt.toISOString(),
     })),
+    theme: p.theme,
   }));
 }
 

@@ -17,9 +17,10 @@
 import { Worker, Job } from "bullmq";
 import { redisConfig } from "@/lib/redis";
 import { db } from "@/lib/db";
-import { generateShot, type ShotConfig, type CharacterRef } from "@/lib/generators/video";
+import { generateShotVariants, type ShotConfig, type CharacterRef } from "@/lib/generators/video";
 import { checkLikeness } from "@/lib/compliance/likeness-check";
 import { downloadFromR2 } from "@/lib/storage";
+import * as jobManager from "@/lib/generation/job-manager";
 
 // ─── Job data types ───────────────────────────────────────────────────────────
 
@@ -44,9 +45,11 @@ export interface SceneGenJobData {
   projectId: string;
   sceneId: string;
   jobId: string;
+  generationJobId?: string;
   shots: SceneGenShotData[];
   characterRefs: CharacterRef[];
   styleConfig: StyleConfig;
+  variantCount?: number;
 }
 
 interface JobCheckpoint {
@@ -57,7 +60,7 @@ interface JobCheckpoint {
 // ─── Worker processor ─────────────────────────────────────────────────────────
 
 async function processSceneGeneration(job: Job<SceneGenJobData>) {
-  const { projectId, sceneId, jobId, shots, characterRefs, styleConfig } = job.data;
+  const { projectId, sceneId, jobId, generationJobId, shots, characterRefs, styleConfig, variantCount = 1 } = job.data;
 
   console.log(
     `[scene-gen] Starting job ${jobId} — scene ${sceneId} — ${shots.length} shots`
@@ -102,6 +105,10 @@ async function processSceneGeneration(job: Job<SceneGenJobData>) {
       console.log(`[scene-gen] Job ${jobId} cancelled`);
       throw new Error("Job cancelled by user");
     }
+    if (await jobManager.checkPauseFlag(projectId)) {
+      if (generationJobId) await jobManager.appendLog(generationJobId, "info", "Pausing after current task completes...");
+      return;
+    }
 
     console.log(`[scene-gen] Generating shot ${shot.shotNumber}/${shots.length}`);
 
@@ -111,7 +118,14 @@ async function processSceneGeneration(job: Job<SceneGenJobData>) {
       data: { status: "GENERATING" },
     });
 
+    const monitorTask = generationJobId ? await jobManager.findTaskByMetadata(projectId, "shotId", shot.shotId) : null;
+    const taskStartedAt = Date.now();
+
     try {
+      if (monitorTask) {
+        await jobManager.startTask(monitorTask.id);
+        await jobManager.updateTaskProgress(monitorTask.id, 10, `Building prompt for shot ${shot.shotNumber}...`);
+      }
       // Build the full ShotConfig with character refs and style
       const shotConfig: ShotConfig = {
         shotId: shot.shotId,
@@ -127,8 +141,12 @@ async function processSceneGeneration(job: Job<SceneGenJobData>) {
         characters: characterRefs,
       };
 
-      // Generate the video
-      const result = await generateShot(projectId, sceneId, shotConfig);
+      // Generate the video variants
+      if (monitorTask) await jobManager.updateTaskProgress(monitorTask.id, 25, `Sending shot ${shot.shotNumber} to video provider...`);
+      const results = await generateShotVariants(projectId, sceneId, shotConfig, variantCount, monitorTask?.id);
+      const result = results[0];
+      const totalCostUsd = results.reduce((sum, item) => sum + item.costUsd, 0);
+      const variantPaths = results.map((item) => item.r2Key);
 
       // Run likeness check
       let likenessChecked = false;
@@ -136,9 +154,10 @@ async function processSceneGeneration(job: Job<SceneGenJobData>) {
       let likenessMatchedName: string | null = null;
       let likenessScore: number | null = null;
       let flaggedReason: string | null = null;
-      let shotStatus: "COMPLETE" | "NEEDS_REVIEW" = "COMPLETE";
+      let shotStatus: "COMPLETE" | "NEEDS_REVIEW" = variantPaths.length > 1 ? "NEEDS_REVIEW" : "COMPLETE";
 
       try {
+        if (monitorTask) await jobManager.updateTaskProgress(monitorTask.id, 85, "Running likeness check...");
         const videoBuffer = await downloadFromR2(result.r2Key);
         const likenessResult = await checkLikeness(videoBuffer, shot.shotId);
 
@@ -170,15 +189,22 @@ async function processSceneGeneration(job: Job<SceneGenJobData>) {
           generatedVideoPath: result.r2Key,
           storagePath: result.r2Key,
           storageBackend: result.backend,
-          prompt: buildPromptSummary(shot, styleConfig),
+          prompt: result.prompt,
+          variantPaths: JSON.stringify(variantPaths),
+          variantCount: variantPaths.length,
+          approvedVariantIndex: 0,
           likenessChecked,
           likenessCheckPassed,
           likenessMatchedName,
           likenessScore,
           flaggedReason,
-          generationCostUsd: result.costUsd,
+          generationCostUsd: totalCostUsd,
         },
       });
+
+      if (monitorTask) {
+        await jobManager.completeTask(monitorTask.id, totalCostUsd, (Date.now() - taskStartedAt) / 1000);
+      }
 
       // ── Checkpoint save ──
       checkpoint.completedShotIds.push(shot.shotId);
@@ -193,14 +219,14 @@ async function processSceneGeneration(job: Job<SceneGenJobData>) {
           metadata: checkpoint as object,
           completedShots: newCompletedCount,
           progress: progressPct,
-          costSoFar: { increment: result.costUsd },
+          costSoFar: { increment: totalCostUsd },
         },
       });
 
       await job.updateProgress(progressPct);
 
       console.log(
-        `[scene-gen] Shot ${shot.shotNumber} done — status=${shotStatus} cost=$${result.costUsd.toFixed(3)} progress=${progressPct}%`
+        `[scene-gen] Shot ${shot.shotNumber} done — status=${shotStatus} variants=${variantPaths.length} cost=$${totalCostUsd.toFixed(3)} progress=${progressPct}%`
       );
     } catch (shotErr) {
       const errMsg = shotErr instanceof Error ? shotErr.message : String(shotErr);
@@ -211,6 +237,7 @@ async function processSceneGeneration(job: Job<SceneGenJobData>) {
         where: { id: shot.shotId },
         data: { status: "FAILED", flaggedReason: errMsg },
       });
+      if (monitorTask) await jobManager.failTask(monitorTask.id, errMsg);
     }
   }
 

@@ -21,7 +21,7 @@ export const PROVIDER_ENV_MAP: Record<string, string | string[]> = {
   runway: "RUNWAYML_API_SECRET",
   replicate: "REPLICATE_API_TOKEN",
   elevenlabs: "ELEVENLABS_API_KEY",
-  mubert: "MUBERT_API_KEY",
+  mubert: ["MUBERT_COMPANY_ID", "MUBERT_LICENSE_TOKEN", "MUBERT_CUSTOMER_ID", "MUBERT_ACCESS_TOKEN"],
   audd: "AUDD_API_TOKEN",
   synclabs: "SYNCLABS_API_KEY",
   openai: "OPENAI_API_KEY",

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { getLocalStoragePath, isR2Configured, storage } from "@/lib/storage";
+import { slugify } from "@/lib/storage/naming";
 
 const SaveStorageSchema = z.object({
   localRootPath: z.string().min(1),
@@ -66,6 +67,7 @@ export async function POST(request: Request) {
   }
 
   const current = await db.storageSetting.findFirst({ orderBy: { updatedAt: "desc" } });
+  const pathChanged = current?.localRootPath !== parsed.data.localRootPath;
   const setting = current
     ? await db.storageSetting.update({
         where: { id: current.id },
@@ -75,9 +77,43 @@ export async function POST(request: Request) {
         data: { localRootPath: parsed.data.localRootPath, useLocalStorage: true },
       });
 
+  const projectsToInitialize = await db.project.findMany({
+    where: pathChanged ? {} : { storageFolderInitialized: false },
+    select: { id: true, name: true, projectSlug: true, createdAt: true },
+  });
+
+  let initialized = 0;
+  for (const project of projectsToInitialize) {
+    const projectSlug = project.projectSlug ?? slugify(project.name);
+    await storage.initProjectFolders(projectSlug, project.name);
+    await storage.save(
+      `${projectSlug}/_manifest.json`,
+      Buffer.from(
+        JSON.stringify(
+          {
+            projectId: project.id,
+            projectSlug,
+            projectName: project.name,
+            createdAt: project.createdAt.toISOString(),
+            storageVersion: "1.0",
+            backend: storage.backend(),
+          },
+          null,
+          2
+        )
+      ),
+      "application/json"
+    );
+    await db.project.update({
+      where: { id: project.id },
+      data: { projectSlug, storageFolderInitialized: true },
+    });
+    initialized += 1;
+  }
+
   const projectsNeedingFolders = await db.project.count({
     where: { storageFolderInitialized: false },
   });
 
-  return NextResponse.json({ data: { setting, projectsNeedingFolders }, error: null });
+  return NextResponse.json({ data: { setting, projectsNeedingFolders, initialized, pathChanged }, error: null });
 }

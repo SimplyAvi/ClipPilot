@@ -13,6 +13,8 @@ import { shotPath, slugify } from "@/lib/storage/naming";
 import { appendGenerationLog } from "@/lib/storage/generation-log";
 import { recordRunwayCost } from "@/lib/analytics/cost-tracker";
 import { db } from "@/lib/db";
+import { buildVisualPromptWithTheme, getThemeForScene } from "@/lib/themes/theme-context";
+import { updateTaskProgress } from "@/lib/generation/job-manager";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,6 +47,8 @@ export interface GenerationResult {
   provider: "runway" | "replicate";
   durationSec: number;
   costUsd: number;
+  prompt: string;
+  variantIndex: number;
 }
 
 // ─── Compliance guardrails ────────────────────────────────────────────────────
@@ -117,7 +121,7 @@ export function buildShotPrompt(shot: ShotConfig): string {
 
 // ─── Runway ML Gen-3 provider ─────────────────────────────────────────────────
 
-const RUNWAY_API_BASE = "https://api.runwayml.com/v1";
+const RUNWAY_API_BASE = "https://api.dev.runwayml.com/v1";
 // Runway Gen-3 Alpha Turbo: ~$0.05/second
 const RUNWAY_COST_PER_SECOND = 0.05;
 // Max poll attempts × interval = 10 minutes timeout
@@ -289,8 +293,50 @@ export async function generateShot(
   sceneId: string,
   shot: ShotConfig
 ): Promise<GenerationResult> {
-  const prompt = buildShotPrompt(shot);
-  console.log(`[video] Generating shot ${shot.shotNumber} — prompt:\n${prompt}`);
+  const variants = await generateShotVariants(projectId, sceneId, shot, 1);
+  return variants[0];
+}
+
+export async function generateShotVariants(
+  projectId: string,
+  sceneId: string,
+  shot: ShotConfig,
+  variantCount: number,
+  monitorTaskId?: string
+): Promise<GenerationResult[]> {
+  const count = Math.max(1, Math.min(variantCount, 3));
+  const theme = await getThemeForScene(sceneId);
+  const basePrompt = buildVisualPromptWithTheme(buildShotPrompt(shot), theme);
+  const results = await Promise.all(
+    Array.from({ length: count }, (_, index) =>
+      generateSingleVariant(projectId, sceneId, shot, basePrompt, index, monitorTaskId)
+    )
+  );
+
+  const variantPaths = results.map((result) => result.r2Key);
+  await db.shot.update({
+    where: { id: shot.shotId },
+    data: {
+      variantPaths: JSON.stringify(variantPaths),
+      variantCount: count,
+      approvedVariantIndex: 0,
+      status: count > 1 ? "NEEDS_REVIEW" : "COMPLETE",
+    },
+  });
+
+  return results;
+}
+
+async function generateSingleVariant(
+  projectId: string,
+  sceneId: string,
+  shot: ShotConfig,
+  basePrompt: string,
+  variantIndex: number,
+  monitorTaskId?: string
+): Promise<GenerationResult> {
+  const prompt = variantIndex === 0 ? basePrompt : `${basePrompt} Variant ${variantIndex + 1}: use a distinct composition, motion rhythm, and performance nuance while preserving continuity.`;
+  console.log(`[video] Generating shot ${shot.shotNumber} variant ${variantIndex + 1} — prompt:\n${prompt}`);
 
   let videoBuffer: Buffer;
   let provider: "runway" | "replicate";
@@ -299,6 +345,7 @@ export async function generateShot(
   // ── Try Runway first ──
   if (process.env.RUNWAY_API_KEY) {
     try {
+      if (monitorTaskId) await updateTaskProgress(monitorTaskId, 40, `Runway rendering variant ${variantIndex + 1}...`);
       videoBuffer = await runwayGenerate(prompt, shot.duration);
       provider = "runway";
       costUsd = shot.duration * RUNWAY_COST_PER_SECOND;
@@ -307,12 +354,14 @@ export async function generateShot(
         `[video] Runway failed for shot ${shot.shotNumber}, falling back to Replicate:`,
         err instanceof Error ? err.message : err
       );
+      if (monitorTaskId) await updateTaskProgress(monitorTaskId, 55, `Replicate rendering fallback variant ${variantIndex + 1}...`);
       videoBuffer = await replicateGenerate(prompt, shot.duration);
       provider = "replicate";
       costUsd = REPLICATE_COST_FLAT;
     }
   } else {
     // ── No Runway key — go straight to Replicate ──
+    if (monitorTaskId) await updateTaskProgress(monitorTaskId, 40, `Replicate rendering variant ${variantIndex + 1}...`);
     videoBuffer = await replicateGenerate(prompt, shot.duration);
     provider = "replicate";
     costUsd = REPLICATE_COST_FLAT;
@@ -331,7 +380,7 @@ export async function generateShot(
     shot.shotNumber,
     shot.shotType,
     characterSlug,
-    1
+    variantIndex + 1
   );
   const stored = await storage.save(filePath, videoBuffer, "video/mp4", {
     projectId,
@@ -339,7 +388,9 @@ export async function generateShot(
     shotId: shot.shotId,
     generatedBy: provider,
     model: provider === "runway" ? "gen3" : "replicate-fallback",
+    variantIndex: String(variantIndex),
   });
+  if (monitorTaskId) await updateTaskProgress(monitorTaskId, 75, `Saved variant ${variantIndex + 1} to storage`);
 
   // Record cost (fire-and-forget — never blocks generation)
   if (provider === "runway") {
@@ -347,7 +398,7 @@ export async function generateShot(
   }
 
   console.log(
-    `[video] Shot ${shot.shotNumber} complete — provider=${provider} cost=$${costUsd.toFixed(3)} key=${stored.path}`
+    `[video] Shot ${shot.shotNumber} variant ${variantIndex + 1} complete — provider=${provider} cost=$${costUsd.toFixed(3)} key=${stored.path}`
   );
 
   await appendGenerationLog(projectSlug, {
@@ -361,7 +412,7 @@ export async function generateShot(
     status: "success",
   }).catch(() => undefined);
 
-  return { r2Key: stored.path, backend: stored.backend, provider, durationSec: shot.duration, costUsd };
+  return { r2Key: stored.path, backend: stored.backend, provider, durationSec: shot.duration, costUsd, prompt, variantIndex };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

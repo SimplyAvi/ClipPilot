@@ -130,6 +130,10 @@ model Project {
   // Theme
   themeId                  String?
   theme                    Theme?        @relation(fields: [themeId], references: [id])
+  themeMode                String        @default("single")
+  themeOverrideMode        String        @default("fill_empty")
+  productionMode           String        @default("character_driven")
+  variantCount             Int           @default(1)
   createdAt                DateTime      @default(now())
   updatedAt                DateTime      @updatedAt
 
@@ -140,10 +144,15 @@ model Project {
   projectCharacters ProjectCharacter[]
   exports           Export[]
   transcription     Transcription?
+  narratorProfile   NarratorProfile?
+  visualSegments    VisualSegment[]
+  scenePreviews     ScenePreview[]
+  projectMusicTrack ProjectMusicTrack?
   thumbnails        ProjectThumbnail[]
   posts             SocialPost[]
   versions          ProjectVersion[]
   costs             ProjectCost[]
+  generationJob     GenerationJob?
 }
 
 model Character {
@@ -282,6 +291,7 @@ model Job {
 model Scene {
   id               String      @id @default(cuid())
   projectId        String
+  themeId          String?
   sceneNumber      Int
   title            String
   location         String?
@@ -289,11 +299,17 @@ model Scene {
   status           SceneStatus @default(DRAFT)
   assembledPath    String?
   assembledBackend String?
+  useProjectTheme  Boolean     @default(true)
+  productionMode   String?
   createdAt        DateTime    @default(now())
 
   project  Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  theme    Theme?         @relation(fields: [themeId], references: [id])
   shots    Shot[]
   musicCue SceneMusicCue?
+  previews ScenePreview[]
+
+  @@index([themeId])
 }
 
 model Shot {
@@ -307,6 +323,9 @@ model Shot {
   storagePath        String?
   thumbnailPath      String?
   status             ShotStatus @default(DRAFT)
+  approvedVariantIndex Int      @default(0)
+  variantPaths         String?  @db.Text
+  variantCount         Int      @default(1)
 
   // Prompt used for generation
   prompt String? @db.Text
@@ -333,6 +352,157 @@ model Shot {
 
   scene         Scene          @relation(fields: [sceneId], references: [id], onDelete: Cascade)
   dialogueLines DialogueLine[]
+}
+
+model NarratorProfile {
+  id               String   @id @default(cuid())
+  projectId        String   @unique
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  voiceId          String?
+  voiceName        String?
+  gender           String?
+  pace             String   @default("measured")
+  tone             String?
+  emotionalRange   String   @default("medium")
+  deliveryStyle    String?
+  previewAudioPath String?
+  pauseSeconds     Float    @default(2)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model VisualSegment {
+  id                 String   @id @default(cuid())
+  projectId          String
+  project            Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stanzaIndex        Int
+  stanzaText         String   @db.Text
+  visualConcept      String   @db.Text
+  primarySubject     String
+  movementStyle      String
+  cameraApproach     String
+  colorTemperature   String
+  emotionalQuality   String?
+  additionalNotes    String?  @db.Text
+  generationPrompt   String?  @db.Text
+  generatedVideoPath String?
+  approvedVariantIdx Int      @default(0)
+  variantPaths       String?  @db.Text
+  narratorAudioPath  String?
+  durationSeconds    Float?
+  sortOrder          Int
+  status             String   @default("pending")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  previews           ScenePreview[]
+
+  @@index([projectId])
+  @@index([projectId, sortOrder])
+}
+
+model ScenePreview {
+  id                   String         @id @default(cuid())
+  sceneId              String?
+  scene                Scene?         @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  visualSegmentId      String?
+  visualSegment        VisualSegment? @relation(fields: [visualSegmentId], references: [id], onDelete: Cascade)
+  projectId            String
+  project              Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  testMode             String
+  status               String         @default("generating")
+  shotsGenerated       Int            @default(0)
+  totalShots           Int            @default(1)
+  previewVideoPath     String?
+  previewThumbPath     String?
+  generationPromptUsed String?        @db.Text
+  themeModifierUsed    String?        @db.Text
+  costActual           Float          @default(0)
+  durationSeconds      Float?
+  approvedAt           DateTime?
+  feedback             String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@index([sceneId])
+  @@index([visualSegmentId])
+  @@index([projectId, createdAt])
+}
+
+model ProjectMusicTrack {
+  id               String   @id @default(cuid())
+  projectId        String   @unique
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  mood             String?
+  tempo            String?
+  style            String?
+  primaryInstrument String?
+  silenceUsage     String?
+  emotionalArc     String?  @db.Text
+  audioPath        String?
+  durationSeconds  Float?
+  generationPrompt String?  @db.Text
+  status           String   @default("pending")
+  createdAt        DateTime @default(now())
+}
+
+model GenerationJob {
+  id                    String           @id @default(cuid())
+  projectId             String           @unique
+  project               Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status                String           @default("queued")
+  startedAt             DateTime?
+  completedAt           DateTime?
+  pausedAt              DateTime?
+  isPauseRequested      Boolean          @default(false)
+  estimatedTotalSeconds Int?
+  totalCostEstimate     Float            @default(0)
+  totalCostActual       Float            @default(0)
+  overallProgress       Float            @default(0)
+  currentStageLabel     String?
+  completedTaskIds      String?          @db.Text
+  tasks                 GenerationTask[]
+  logs                  GenerationLog[]
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+}
+
+model GenerationTask {
+  id              String           @id @default(cuid())
+  jobId           String
+  job             GenerationJob    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  parentTaskId    String?
+  parent          GenerationTask?  @relation("TaskChildren", fields: [parentTaskId], references: [id])
+  children        GenerationTask[] @relation("TaskChildren")
+  taskType        String
+  label           String
+  status          String           @default("pending")
+  progress        Float            @default(0)
+  startedAt       DateTime?
+  completedAt     DateTime?
+  durationSeconds Float?
+  costActual      Float            @default(0)
+  errorMessage    String?
+  retryCount      Int              @default(0)
+  metadata        String?          @db.Text
+  sortOrder       Int              @default(0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([jobId])
+  @@index([parentTaskId])
+}
+
+model GenerationLog {
+  id        String        @id @default(cuid())
+  jobId     String
+  job       GenerationJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  level     String        @default("info")
+  message   String
+  taskId    String?
+  metadata  String?       @db.Text
+  timestamp DateTime      @default(now())
+
+  @@index([jobId, timestamp])
 }
 
 // ─── Phase 6: Audio pipeline models ──────────────────────────────────────────
@@ -632,6 +802,7 @@ model Theme {
   updatedAt              DateTime @updatedAt
 
   projectsUsingTheme  Project[]
+  sceneOverrides      Scene[]
   generatedCharacters Character[]
 }
 

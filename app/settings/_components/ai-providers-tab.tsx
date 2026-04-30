@@ -107,9 +107,9 @@ const SECTIONS: Section[] = [
         name: "Mubert",
         initial: "M",
         color: "bg-green-600",
-        description: "AI music generation for scene underscore",
-        envVars: ["MUBERT_API_KEY"],
-        getKeyHref: "https://mubert.com/render/pricing",
+        description: "Text-to-music generation for scene underscore and narrator scores",
+        envVars: ["MUBERT_COMPANY_ID", "MUBERT_LICENSE_TOKEN", "MUBERT_CUSTOMER_ID", "MUBERT_ACCESS_TOKEN"],
+        getKeyHref: "https://mubert.com/api/docs",
       },
       {
         id: "epidemic",

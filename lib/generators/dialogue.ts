@@ -19,6 +19,7 @@ import { dialoguePath, slugify } from "@/lib/storage/naming";
 import { appendGenerationLog } from "@/lib/storage/generation-log";
 import { db } from "@/lib/db";
 import { recordElevenLabsCost } from "@/lib/analytics/cost-tracker";
+import { buildAudioPromptWithTheme, getThemeForScene } from "@/lib/themes/theme-context";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -99,6 +100,7 @@ export async function generateShotDialogue(
   const sorted = [...lines].sort((a, b) => a.lineIndex - b.lineIndex);
   const timings: DialogueTiming[] = [];
   let cursor = 0; // running position in seconds
+  const theme = await getThemeForScene(sceneId);
 
   for (const line of sorted) {
     await db.dialogueLine.update({
@@ -107,7 +109,11 @@ export async function generateShotDialogue(
     });
 
     try {
-      const { audioBuffer, estimatedDurationSec } = await generateSingleLine(line);
+      const themedLine = {
+        ...line,
+        deliveryDirection: buildAudioPromptWithTheme(line.deliveryDirection ?? "Natural delivery", theme),
+      };
+      const { audioBuffer, estimatedDurationSec } = await generateSingleLine(themedLine);
 
       const shot = await db.shot.findUnique({
         where: { id: shotId },

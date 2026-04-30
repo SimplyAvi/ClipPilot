@@ -16,6 +16,7 @@ node_modules/
 # misc
 .DS_Store
 *.pem
+generated-media/
 
 # debug
 npm-debug.log*

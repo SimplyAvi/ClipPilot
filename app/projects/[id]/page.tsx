@@ -3,6 +3,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { NextStepBanner } from "@/components/projects/next-step-banner";
 import {
   ArrowLeft, Clapperboard, Users, Music, ShieldCheck, Upload,
   Captions, Image as ImageIcon, Share2, History, BarChart2,
@@ -33,6 +34,7 @@ export default async function ProjectPage({ params }: { params: { id: string } }
     where: { id: params.id },
     include: {
       scripts: { orderBy: { createdAt: "desc" }, take: 1 },
+      theme: { select: { id: true, name: true } },
       _count: { select: { scenes: true, assets: true, jobs: true } },
       posts: {
         where: { status: "published" },
@@ -45,6 +47,7 @@ export default async function ProjectPage({ params }: { params: { id: string } }
   if (!project) notFound();
 
   const status = STATUS_LABELS[project.status] ?? STATUS_LABELS.DRAFT;
+  const isVisualNarrator = project.productionMode === "visual_narrator";
   const publishedPosts = project.posts ?? [];
   const postsWithAnalytics = publishedPosts.filter((p) => p.analytics);
 
@@ -60,6 +63,7 @@ export default async function ProjectPage({ params }: { params: { id: string } }
 
   return (
     <div className="mx-auto max-w-3xl">
+      <NextStepBanner projectId={project.id} />
       <div className="mb-6 flex items-center gap-3">
         <Button variant="ghost" size="icon" asChild>
           <Link href="/"><ArrowLeft className="h-4 w-4" /></Link>
@@ -68,10 +72,21 @@ export default async function ProjectPage({ params }: { params: { id: string } }
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold">{project.name}</h1>
             <Badge variant={status.variant}>{status.label}</Badge>
+            <Badge variant="secondary" title={isVisualNarrator ? "Visuals and narrator voice carry this project. No on-screen people are generated." : "Characters, voices, dialogue, and lip sync carry this project."}>
+              {isVisualNarrator ? "🌿 Visual Narrator Mode" : "👤 Character Mode"}
+            </Badge>
           </div>
           <p className="text-sm text-muted-foreground">
             Created {new Date(project.createdAt).toLocaleDateString()}
           </p>
+          {project.theme && (
+            <Link
+              href={`/themes/${project.theme.id}`}
+              className="mt-1 inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              🎨 {project.theme.name}
+            </Link>
+          )}
         </div>
       </div>
 
@@ -81,15 +96,23 @@ export default async function ProjectPage({ params }: { params: { id: string } }
             <Link href={`/projects/${project.id}/analysis`}>View Script Analysis</Link>
           </Button>
           <Button asChild>
-            <Link href={`/projects/${project.id}/characters`}>
-              <Users className="mr-2 h-4 w-4" />
-              Configure Characters
+            <Link href={isVisualNarrator ? `/projects/${project.id}/visual-storyboard` : `/projects/${project.id}/characters`}>
+              {isVisualNarrator ? <Clapperboard className="mr-2 h-4 w-4" /> : <Users className="mr-2 h-4 w-4" />}
+              {isVisualNarrator ? "Storyboard" : "Configure Characters"}
             </Link>
           </Button>
+          {isVisualNarrator && (
+            <Button asChild variant="outline">
+              <Link href={`/projects/${project.id}/narrator`}>
+                <Users className="mr-2 h-4 w-4" />
+                Narrator
+              </Link>
+            </Button>
+          )}
           <Button asChild variant="outline">
-            <Link href={`/projects/${project.id}/music`}>
+            <Link href={isVisualNarrator ? `/projects/${project.id}/project-music` : `/projects/${project.id}/music`}>
               <Music className="mr-2 h-4 w-4" />
-              Music
+              {isVisualNarrator ? "Music Score" : "Music"}
             </Link>
           </Button>
           <Button asChild variant="default">

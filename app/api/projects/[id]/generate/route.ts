@@ -28,6 +28,7 @@ export async function POST(
       include: {
         scripts: { orderBy: { createdAt: "desc" }, take: 1 },
         projectCharacters: { include: { character: true } },
+        theme: true,
       },
     });
 
@@ -86,6 +87,8 @@ export async function POST(
           location: sceneData.location,
           timeOfDay: sceneData.timeOfDay,
           status: "DRAFT",
+          useProjectTheme: project.themeMode !== "per_scene",
+          productionMode: project.productionMode === "mixed" ? inferSceneProductionMode(sceneData.charactersPresent) : project.productionMode,
         },
         create: {
           id: `${projectId}-scene-${sceneData.sceneNumber}`,
@@ -95,6 +98,8 @@ export async function POST(
           location: sceneData.location ?? null,
           timeOfDay: sceneData.timeOfDay,
           status: "DRAFT",
+          useProjectTheme: project.themeMode !== "per_scene",
+          productionMode: project.productionMode === "mixed" ? inferSceneProductionMode(sceneData.charactersPresent) : project.productionMode,
         },
       });
 
@@ -112,13 +117,14 @@ export async function POST(
 
         await db.shot.upsert({
           where: { id: shotId },
-          update: { status: "DRAFT", shotType: beat.suggestedShotType },
+          update: { status: "DRAFT", shotType: beat.suggestedShotType, variantCount: project.variantCount },
           create: {
             id: shotId,
             sceneId: scene.id,
             shotNumber,
             shotType: beat.suggestedShotType,
             duration: shotDuration,
+            variantCount: project.variantCount,
             status: "DRAFT",
           },
         });
@@ -147,6 +153,7 @@ export async function POST(
             emotionalTone: sceneData.emotionalTone,
             genre: "general",
           },
+          variantCount: project.variantCount,
         } satisfies SceneGenJobData,
         {
           attempts: 2,
@@ -176,6 +183,10 @@ export async function POST(
       { status: 500 }
     );
   }
+}
+
+function inferSceneProductionMode(charactersPresent: string[]): string {
+  return charactersPresent.length > 0 ? "character_driven" : "visual_only";
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

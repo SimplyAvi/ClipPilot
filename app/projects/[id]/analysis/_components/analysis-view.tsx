@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +15,8 @@ import {
   Clock,
   MapPin,
   Users,
+  UserRound,
+  Leaf,
   Clapperboard,
   BarChart2,
   FileText,
@@ -195,7 +198,10 @@ interface Props {
 }
 
 export function AnalysisView({ projectId, projectName, analysis }: Props) {
+  const router = useRouter();
   const [runtimeTab, setRuntimeTab] = useState<RuntimeKey>("suggested");
+  const [choosingMode, setChoosingMode] = useState<"characters" | "visuals" | null>(null);
+  const [modeError, setModeError] = useState<string | null>(null);
   const rec = analysis.runtimeRecommendation;
 
   const totalDurationSec = analysis.scenes.reduce(
@@ -211,6 +217,44 @@ export function AnalysisView({ projectId, projectName, analysis }: Props) {
       : analysis.narrativeComplexityScore <= 6
       ? "bg-yellow-500"
       : "bg-red-500";
+
+  async function chooseCharacters() {
+    setChoosingMode("characters");
+    setModeError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/production-mode`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productionMode: "character_driven" }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Could not set production mode");
+      router.push(`/projects/${projectId}/characters`);
+    } catch (err) {
+      setModeError(err instanceof Error ? err.message : "Could not continue to characters");
+    } finally {
+      setChoosingMode(null);
+    }
+  }
+
+  async function chooseVisualsOnly() {
+    setChoosingMode("visuals");
+    setModeError(null);
+    try {
+      const res = await fetch("/api/visual-narrator/segment-script", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Could not build visual storyboard");
+      router.push(`/projects/${projectId}/visual-storyboard`);
+    } catch (err) {
+      setModeError(err instanceof Error ? err.message : "Could not build visual storyboard");
+    } finally {
+      setChoosingMode(null);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -438,22 +482,55 @@ export function AnalysisView({ projectId, projectName, analysis }: Props) {
       )}
 
       {/* ── Actions ── */}
-      <div className="flex justify-between gap-3">
+      <div className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Who or what carries this video?</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <button
+                type="button"
+                onClick={chooseCharacters}
+                disabled={choosingMode !== null}
+                className="rounded-lg border p-5 text-left transition hover:border-primary disabled:opacity-60"
+              >
+                <UserRound className="mb-4 h-8 w-8 text-primary" />
+                <h3 className="font-semibold">Characters</h3>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Real or fictional people appear on screen. Faces, voices, dialogue, and lip sync move through the character setup page.
+                </p>
+                <span className="mt-4 inline-flex items-center text-sm font-medium">
+                  {choosingMode === "characters" ? "Opening..." : "Character setup page"} <ArrowRight className="ml-2 h-4 w-4" />
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={chooseVisualsOnly}
+                disabled={choosingMode !== null}
+                className="rounded-lg border p-5 text-left transition hover:border-primary disabled:opacity-60"
+              >
+                <Leaf className="mb-4 h-8 w-8 text-primary" />
+                <h3 className="font-semibold">Visuals Only</h3>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  No people on screen. Imagery, nature, objects, and environments carry the words while a narrator reads over the visuals.
+                </p>
+                <span className="mt-4 inline-flex items-center text-sm font-medium">
+                  {choosingMode === "visuals" ? "Building storyboard..." : "Visual storyboard"} <ArrowRight className="ml-2 h-4 w-4" />
+                </span>
+              </button>
+            </div>
+            {modeError && <p className="text-sm text-destructive">{modeError}</p>}
+          </CardContent>
+        </Card>
+
+        <div className="flex justify-between gap-3">
         <Button variant="outline" asChild>
           <Link href="/projects/new">
             <FileText className="mr-2 h-4 w-4" />
             Edit Script
           </Link>
         </Button>
-
-        <div className="relative group">
-          <Button disabled>
-            Continue to Characters
-            <ArrowRight className="ml-2 h-4 w-4" />
-          </Button>
-          <div className="pointer-events-none absolute bottom-full right-0 mb-2 hidden rounded-md bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-md group-hover:block border">
-            Coming Soon
-          </div>
         </div>
       </div>
     </div>

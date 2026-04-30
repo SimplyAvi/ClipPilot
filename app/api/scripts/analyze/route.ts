@@ -30,6 +30,11 @@ const RequestSchema = z.object({
     "youtube-shorts", "instagram-reels", "tiktok", "youtube-standard",
   ]),
   targetLength: z.enum(["short", "medium", "long", "ai-recommend"]),
+  themeId: z.string().optional(),
+  themeMode: z.enum(["single", "per_scene"]).default("single"),
+  themeOverrideMode: z.enum(["fill_empty", "replace_all"]).default("fill_empty"),
+  productionMode: z.enum(["character_driven", "visual_only", "mixed"]).default("character_driven"),
+  variantCount: z.number().int().min(1).max(3).default(1),
 });
 
 // ─── Response schema ──────────────────────────────────────────────────────────
@@ -108,7 +113,19 @@ export async function POST(request: Request) {
     );
   }
 
-  const { projectName, scriptText, genre, tone, platform, targetLength } = parsed.data;
+  const {
+    projectName,
+    scriptText,
+    genre,
+    tone,
+    platform,
+    targetLength,
+    themeId,
+    themeMode,
+    themeOverrideMode,
+    productionMode,
+    variantCount,
+  } = parsed.data;
 
   // 2. Resolve API key (DB-stored takes priority, env var is fallback)
   const apiKey = await getSetting("ANTHROPIC_API_KEY");
@@ -124,6 +141,24 @@ export async function POST(request: Request) {
   }
 
   const anthropic = new Anthropic({ apiKey });
+
+  const theme = themeId
+    ? await db.theme.findUnique({
+        where: { id: themeId },
+        select: {
+          id: true,
+          genre: true,
+          tone: true,
+          pacing: true,
+          environmentDescription: true,
+          cinematographyNotes: true,
+        },
+      })
+    : null;
+
+  if (themeId && !theme) {
+    return NextResponse.json({ data: null, error: "Theme not found" }, { status: 404 });
+  }
 
   // 3. Call Claude
   let rawAnalysis: string;
@@ -142,6 +177,8 @@ export async function POST(request: Request) {
             targetLength,
             genre,
             tone,
+            productionMode,
+            theme,
           }),
         },
       ],
@@ -205,6 +242,11 @@ export async function POST(request: Request) {
         genre,
         tone,
         targetLength: targetLength === "ai-recommend" ? analysis.runtimeRecommendation.suggested.toLowerCase() : targetLength,
+        themeId: theme?.id ?? null,
+        themeMode,
+        themeOverrideMode,
+        productionMode,
+        variantCount,
         scripts: {
           create: {
             content: scriptText,
@@ -226,10 +268,20 @@ export async function POST(request: Request) {
             location: scene.location ?? null,
             timeOfDay: scene.timeOfDay,
             status: "DRAFT",
+            themeId: themeMode === "single" ? null : theme?.id ?? null,
+            useProjectTheme: true,
+            productionMode: productionMode === "mixed" ? inferSceneProductionMode(scene) : productionMode,
           },
         })
       )
     );
+
+    if (theme) {
+      await db.theme.update({
+        where: { id: theme.id },
+        data: { usageCount: { increment: 1 } },
+      });
+    }
 
     // Fire-and-forget cost recording now that we have the projectId
     if (claudeInputTokens > 0) {
@@ -247,4 +299,8 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+function inferSceneProductionMode(scene: z.infer<typeof SceneSchema>): string {
+  return scene.charactersPresent.length > 0 ? "character_driven" : "visual_only";
 }

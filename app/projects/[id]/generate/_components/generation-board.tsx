@@ -15,6 +15,10 @@ import {
   DollarSign,
   Film,
   Eye,
+  Layers,
+  UserRound,
+  Mountain,
+  Palette,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -32,6 +36,10 @@ interface ShotData {
   likenessMatchedName: string | null;
   flaggedReason: string | null;
   generationCostUsd: number | null;
+  variantCount: number;
+  variantPaths: string | null;
+  approvedVariantIndex: number;
+  prompt: string | null;
 }
 
 interface SceneData {
@@ -39,6 +47,7 @@ interface SceneData {
   sceneNumber: number;
   title: string;
   status: string;
+  productionMode: string | null;
   shots: ShotData[];
 }
 
@@ -58,6 +67,9 @@ interface GenerationBoardProps {
   projectId: string;
   jobId: string | null;
   initialScenes: SceneData[];
+  themeName: string | null;
+  projectName: string;
+  productionMode: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -140,11 +152,22 @@ function ShotCard({ shot }: { shot: ShotData }) {
       <div className="p-2">
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium">Shot {shot.shotNumber}</span>
-          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-            {shot.shotType}
-          </span>
-        </div>
-        <p className="mt-0.5 text-[10px] text-muted-foreground">{shot.duration}s</p>
+        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+          {shot.shotType}
+        </span>
+      </div>
+      <p className="mt-0.5 text-[10px] text-muted-foreground">{shot.duration}s</p>
+      {shot.variantCount > 1 && (
+        <p className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-amber-700">
+          <Layers className="h-3 w-3" />
+          {shot.variantCount} variants available
+        </p>
+      )}
+      {shot.prompt && (
+        <p className="mt-1 line-clamp-2 text-[10px] text-muted-foreground">
+          {shot.prompt}
+        </p>
+      )}
 
         {/* Flagged reason */}
         {shot.status === "NEEDS_REVIEW" && shot.flaggedReason && (
@@ -168,6 +191,9 @@ export default function GenerationBoard({
   projectId,
   jobId: initialJobId,
   initialScenes,
+  themeName,
+  projectName,
+  productionMode,
 }: GenerationBoardProps) {
   const [jobId, setJobId] = useState<string | null>(initialJobId);
   const [scenes, setScenes] = useState<SceneData[]>(initialScenes);
@@ -225,15 +251,17 @@ export default function GenerationBoard({
     setStarting(true);
     setStartError(null);
     try {
-      const res = await fetch(`/api/projects/${projectId}/generate`, {
+      const startRes = await fetch(`/api/generation/${projectId}/start`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fromCheckpoint: false }),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Failed to start");
-      const newJobId: string = json.data.jobId;
+      const startJson = await startRes.json();
+      if (!startRes.ok) throw new Error(startJson.error ?? "Failed to start");
+      const newJobId: string | null = startJson.data.legacyJobId ?? null;
       setJobId(newJobId);
       setJobStatus("PROCESSING");
-      subscribeToProgress(newJobId);
+      if (newJobId) subscribeToProgress(newJobId);
     } catch (err) {
       setStartError(err instanceof Error ? err.message : "Failed to start generation");
     } finally {
@@ -243,17 +271,14 @@ export default function GenerationBoard({
 
   // ── Job control (pause / resume / cancel) ──
   async function handleControl(action: "pause" | "resume" | "cancel") {
-    if (!jobId) return;
     setControlling(true);
     try {
-      const res = await fetch(`/api/jobs/${jobId}`, {
+      const res = await fetch(`/api/generation/${projectId}/${action}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Control failed");
-      setJobStatus(json.data.status);
+      setJobStatus(json.data.status?.toUpperCase?.() ?? json.data.status);
     } catch (err) {
       console.error("Job control error:", err);
     } finally {
@@ -305,6 +330,12 @@ export default function GenerationBoard({
                 </span>
               )}
             </div>
+          )}
+          {themeName && (
+            <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Palette className="h-4 w-4" />
+              Theme applied: {themeName}
+            </p>
           )}
 
           {/* Error */}
@@ -390,7 +421,15 @@ export default function GenerationBoard({
                 <CardTitle className="text-base">
                   Scene {scene.sceneNumber} — {scene.title}
                 </CardTitle>
-                <Badge variant="outline">{scene.status}</Badge>
+                <div className="flex items-center gap-2">
+                  {scene.productionMode && (
+                    <Badge variant="secondary" className="gap-1">
+                      {scene.productionMode === "visual_only" ? <Mountain className="h-3 w-3" /> : <UserRound className="h-3 w-3" />}
+                      {scene.productionMode === "visual_only" ? "Visual Scene" : "Character Scene"}
+                    </Badge>
+                  )}
+                  <Badge variant="outline">{scene.status}</Badge>
+                </div>
               </div>
             </CardHeader>
             <CardContent>

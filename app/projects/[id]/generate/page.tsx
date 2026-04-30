@@ -2,8 +2,10 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Palette } from "lucide-react";
 import GenerationBoard from "./_components/generation-board";
+import { ProductionMonitor } from "@/components/generation/production-monitor";
+import { VisualNarratorGenerateBoard } from "./_components/visual-narrator-generate-board";
 
 // ─── Data fetching ─────────────────────────────────────────────────────────────
 
@@ -20,6 +22,10 @@ async function getPageData(projectId: string) {
         orderBy: { createdAt: "desc" },
         take: 1,
       },
+      theme: { select: { id: true, name: true } },
+      visualSegments: { orderBy: { sortOrder: "asc" } },
+      narratorProfile: { select: { voiceId: true } },
+      projectMusicTrack: { select: { audioPath: true, status: true } },
     },
   });
 
@@ -43,8 +49,9 @@ export default async function GeneratePage({
     id: scene.id,
     sceneNumber: scene.sceneNumber,
     title: scene.title,
-    status: scene.status,
-    shots: scene.shots.map((shot) => ({
+      status: scene.status,
+      productionMode: scene.productionMode,
+      shots: scene.shots.map((shot) => ({
       id: shot.id,
       shotNumber: shot.shotNumber,
       shotType: shot.shotType,
@@ -57,6 +64,10 @@ export default async function GeneratePage({
       likenessMatchedName: shot.likenessMatchedName,
       flaggedReason: shot.flaggedReason,
       generationCostUsd: shot.generationCostUsd,
+      variantCount: shot.variantCount,
+      variantPaths: shot.variantPaths,
+      approvedVariantIndex: shot.approvedVariantIndex,
+      prompt: shot.prompt,
     })),
   }));
 
@@ -71,14 +82,48 @@ export default async function GeneratePage({
         </Button>
         <div>
           <h1 className="text-2xl font-bold">Generate</h1>
-          <p className="text-sm text-muted-foreground">{project.name}</p>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <span>{project.name}</span>
+            {project.theme && (
+              <Link href={`/themes/${project.theme.id}`} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 hover:text-foreground">
+                <Palette className="h-3 w-3" />
+                {project.theme.name}
+              </Link>
+            )}
+          </div>
         </div>
       </div>
 
-      <GenerationBoard
+      {project.productionMode === "visual_narrator" ? (
+        <VisualNarratorGenerateBoard
+          projectId={params.id}
+          projectName={project.name}
+          themeName={project.theme?.name ?? null}
+          narratorConfigured={Boolean(project.narratorProfile?.voiceId)}
+          musicConfigured={Boolean(project.projectMusicTrack?.audioPath)}
+          segments={project.visualSegments.map((segment) => ({
+            id: segment.id,
+            label: segment.primarySubject || segment.visualConcept,
+            status: segment.status,
+            hasVisual: Boolean(segment.generatedVideoPath),
+            hasAudio: Boolean(segment.narratorAudioPath),
+          }))}
+        />
+      ) : (
+        <GenerationBoard
+          projectId={params.id}
+          jobId={latestJob?.id ?? null}
+          initialScenes={initialScenes}
+          themeName={project.theme?.name ?? null}
+          projectName={project.name}
+          productionMode={project.productionMode}
+        />
+      )}
+      <ProductionMonitor
         projectId={params.id}
-        jobId={latestJob?.id ?? null}
-        initialScenes={initialScenes}
+        projectName={project.name}
+        themeName={project.theme?.name ?? null}
+        mode={project.productionMode}
       />
     </div>
   );

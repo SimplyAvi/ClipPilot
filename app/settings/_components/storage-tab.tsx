@@ -96,7 +96,12 @@ export function StorageTab({ envStatus }: Props) {
     setSaving(false);
     if (res.ok) {
       setInfo((current) => current ? { ...current, projectsNeedingFolders: json.data.projectsNeedingFolders, localRootPath: path } : current);
-      setMessage("Local storage path saved");
+      setMessage(
+        json.data.initialized > 0
+          ? `Local storage path saved. Created folders for ${json.data.initialized} project${json.data.initialized === 1 ? "" : "s"}.`
+          : "Local storage path saved"
+      );
+      await loadInfo();
     } else {
       setMessage(json.error ?? "Failed to save storage path");
     }

@@ -42,6 +42,7 @@ interface RecentProject {
   name: string;
   status: string;
   updatedAt: string;
+  productionMode?: string;
 }
 
 const navItems = [
@@ -146,6 +147,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const projectId = getProjectId(pathname);
   const [characterCount, setCharacterCount] = useState<number | null>(null);
+  const [projectMode, setProjectMode] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,6 +159,21 @@ export function Sidebar() {
       .catch(() => undefined);
     return () => { cancelled = true; };
   }, [pathname]);
+
+  useEffect(() => {
+    if (!projectId) {
+      setProjectMode(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/projects/${projectId}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (!cancelled) setProjectMode(json.data?.productionMode ?? null);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [projectId, pathname]);
 
   return (
     <aside className="flex h-screen w-60 flex-col border-r bg-card">
@@ -212,6 +229,15 @@ export function Sidebar() {
               This Project
             </p>
             {[
+              ...(projectMode === "visual_narrator"
+                ? [
+                    { href: `/projects/${projectId}/visual-storyboard`, label: "Storyboard", Icon: Palette },
+                    { href: `/projects/${projectId}/narrator`, label: "Narrator", Icon: UserRound },
+                    { href: `/projects/${projectId}/project-music`, label: "Music Score", Icon: Video },
+                  ]
+                : [
+                    { href: `/projects/${projectId}/characters`, label: "Characters", Icon: UserRound },
+                  ]),
               { href: `/projects/${projectId}/captions`, label: "Captions", Icon: Captions },
               { href: `/projects/${projectId}/thumbnails`, label: "Thumbnails", Icon: ImageIcon },
               { href: `/projects/${projectId}/publish`, label: "Publish", Icon: Share2 },

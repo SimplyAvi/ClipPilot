@@ -120,6 +120,14 @@ export interface ScriptAnalysisContext {
   targetLength: string; // "short" | "medium" | "long" | "ai-recommend"
   genre: string;
   tone: string;
+  productionMode?: string;
+  theme?: {
+    genre?: string | null;
+    tone?: string | null;
+    pacing?: string | null;
+    environmentDescription?: string | null;
+    cinematographyNotes?: string | null;
+  } | null;
 }
 
 export function buildScriptAnalysisPrompt(
@@ -138,6 +146,18 @@ CONTEXT:
 - ${lengthGuide}
 - Genre: ${ctx.genre}
 - Tone: ${ctx.tone}
+${ctx.productionMode ? `- Production Mode: ${ctx.productionMode}` : ""}
+${ctx.theme ? `
+THEME CONTEXT:
+This script will be produced in the style of this theme:
+- Genre: ${ctx.theme.genre ?? "unspecified"}
+- Tone: ${ctx.theme.tone ?? "unspecified"}
+- Pacing feel: ${ctx.theme.pacing ?? "unspecified"}
+- Environment: ${ctx.theme.environmentDescription ?? "unspecified"}
+- Cinematography approach: ${ctx.theme.cinematographyNotes ?? "unspecified"}
+
+Let this inform your scene pacing estimates, shot type suggestions, visual scene choices, and runtime recommendation.
+` : ""}
 
 SCRIPT:
 ---

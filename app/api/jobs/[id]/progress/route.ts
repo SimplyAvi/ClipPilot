@@ -75,6 +75,7 @@ export async function GET(
               sceneNumber: scene.sceneNumber,
               title: scene.title,
               status: scene.status,
+              productionMode: scene.productionMode,
               shots: scene.shots.map((shot) => ({
                 id: shot.id,
                 shotNumber: shot.shotNumber,
@@ -88,6 +89,10 @@ export async function GET(
                 likenessMatchedName: shot.likenessMatchedName,
                 flaggedReason: shot.flaggedReason,
                 generationCostUsd: shot.generationCostUsd,
+                variantCount: shot.variantCount,
+                variantPaths: shot.variantPaths,
+                approvedVariantIndex: shot.approvedVariantIndex,
+                prompt: shot.prompt,
               })),
             })),
           };
