@@ -60,15 +60,16 @@ export async function analyzeFramesWithClaude(
 
   // Retry once with stricter prompt if first attempt fails
   if (!result) {
+    console.warn("[vision-analyzer] attempt 1 failed — retrying with stricter prompt");
     const strictPrompt =
       userPrompt +
       "\n\nCRITICAL: Return ONLY the JSON object. No prose, no markdown, no code fences. Start your response with { and end with }";
-    result = await callClaude(anthropic, imageBlocks, strictPrompt);
+    result = await callClaude(anthropic, imageBlocks, strictPrompt, 2);
   }
 
   if (!result) {
     throw new Error(
-      "AI analysis returned an unexpected response. Please try again."
+      "AI analysis failed after 2 attempts. Check the server logs for the exact error, then try again."
     );
   }
 
@@ -88,11 +89,12 @@ function selectFrames(framePaths: string[], count: number): string[] {
 async function callClaude(
   anthropic: Anthropic,
   imageBlocks: Anthropic.ImageBlockParam[],
-  textPrompt: string
+  textPrompt: string,
+  attempt = 1
 ): Promise<ThemeAnalysisResponse | null> {
   try {
     const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-4-6",
       max_tokens: 2048,
       system: THEME_ANALYSIS_SYSTEM_PROMPT,
       messages: [
@@ -107,16 +109,26 @@ async function callClaude(
     });
 
     const block = message.content[0];
-    if (block.type !== "text") return null;
+    if (block.type !== "text") {
+      console.error(`[vision-analyzer] attempt ${attempt}: response block type was "${block.type}", expected "text"`);
+      return null;
+    }
 
     const raw = block.text
       .replace(/^```(?:json)?\n?/m, "")
       .replace(/\n?```$/m, "")
       .trim();
 
-    const parsed = JSON.parse(raw) as ThemeAnalysisResponse;
-    return parsed;
-  } catch {
+    try {
+      const parsed = JSON.parse(raw) as ThemeAnalysisResponse;
+      return parsed;
+    } catch (parseErr) {
+      console.error(`[vision-analyzer] attempt ${attempt}: JSON parse failed —`, parseErr);
+      console.error(`[vision-analyzer] raw response (first 500 chars):`, raw.slice(0, 500));
+      return null;
+    }
+  } catch (apiErr) {
+    console.error(`[vision-analyzer] attempt ${attempt}: Anthropic API error —`, apiErr);
     return null;
   }
 }
