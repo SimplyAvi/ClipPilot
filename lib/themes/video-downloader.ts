@@ -9,6 +9,7 @@
 import path from "path";
 import { execSync } from "child_process";
 import fs from "fs";
+import { getYtdlpBin } from "./ytdlp-check";
 
 export interface DownloadResult {
   videoPath: string;
@@ -51,10 +52,11 @@ export async function downloadForAnalysis(
   const platform = detectPlatform(url);
   const timestamp = Date.now();
   const outputTemplate = path.join(tempDir, `${timestamp}_analysis.%(ext)s`);
+  const ytdlp = getYtdlpBin();
 
   // Use yt-dlp with lowest quality — we only need the video for frame extraction
   const infoCmd = [
-    "yt-dlp",
+    `"${ytdlp}"`,
     "--no-playlist",
     "--print", "title",
     "--print", "duration",
@@ -86,7 +88,7 @@ export async function downloadForAnalysis(
 
   // Download using worst available quality
   const downloadCmd = [
-    "yt-dlp",
+    `"${ytdlp}"`,
     "--no-playlist",
     "--format", "worst[ext=mp4]/worst",
     "--max-filesize", "200m",

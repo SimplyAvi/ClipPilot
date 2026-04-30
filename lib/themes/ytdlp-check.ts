@@ -13,9 +13,31 @@ export interface YtdlpStatus {
   version?: string;
 }
 
+// Common install locations — Next.js server doesn't inherit shell PATH
+const YTDLP_CANDIDATES = [
+  process.env.YTDLP_PATH,          // explicit override via env
+  "/usr/local/bin/yt-dlp",         // Homebrew (Intel Mac)
+  "/opt/homebrew/bin/yt-dlp",      // Homebrew (Apple Silicon)
+  "/usr/bin/yt-dlp",               // Linux system install
+  "yt-dlp",                        // fallback: hope it's on PATH
+].filter(Boolean) as string[];
+
+export function getYtdlpBin(): string {
+  for (const candidate of YTDLP_CANDIDATES) {
+    try {
+      execSync(`"${candidate}" --version`, { stdio: "pipe" });
+      return candidate;
+    } catch {
+      // try next
+    }
+  }
+  return "yt-dlp"; // last resort
+}
+
 export function checkYtdlp(): YtdlpStatus {
   try {
-    const output = execSync("yt-dlp --version", { stdio: "pipe" }).toString().trim();
+    const bin = getYtdlpBin();
+    const output = execSync(`"${bin}" --version`, { stdio: "pipe" }).toString().trim();
     return { available: true, version: output };
   } catch {
     return { available: false };
