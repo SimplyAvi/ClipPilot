@@ -1,25 +1,13 @@
 /**
  * lib/themes/color-extractor.ts
  *
- * Extracts color palette and mood from video frames using node-vibrant.
+ * Extracts color palette and mood from video frames using sharp.
+ * Sharp is a native C++ module — no webpack bundling issues.
  * Analyzes every other frame to avoid redundancy and aggregates across
  * all analyzed frames to build a representative palette.
  */
 
-// node-vibrant is loaded dynamically to avoid Next.js bundler issues
-type VibrantSwatch = { rgb: [number, number, number] } | null;
-type VibrantPalette = Record<string, VibrantSwatch>;
-interface VibrantLib {
-  from: (p: string) => { getPalette: () => Promise<VibrantPalette> };
-}
-
-let _Vibrant: VibrantLib | null = null;
-async function getVibrant(): Promise<VibrantLib> {
-  if (_Vibrant) return _Vibrant;
-  const mod = require("node-vibrant/node") as { Vibrant?: VibrantLib; default?: { Vibrant?: VibrantLib } };
-  _Vibrant = (mod.Vibrant ?? mod.default?.Vibrant ?? (mod as unknown as VibrantLib));
-  return _Vibrant as VibrantLib;
-}
+import sharp from "sharp";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,15 +19,18 @@ export interface ColorPaletteResult {
   contrast: "low" | "medium" | "high";
 }
 
-// ─── Hex helpers ──────────────────────────────────────────────────────────────
+// ─── Hex / HSL helpers ────────────────────────────────────────────────────────
 
-function hexToHsl(hex: string): [number, number, number] {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
+function rgbToHex(r: number, g: number, b: number): string {
+  return "#" + [r, g, b]
+    .map((v) => Math.round(v).toString(16).padStart(2, "0"))
+    .join("");
+}
 
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  const rn = r / 255, gn = g / 255, bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
   const l = (max + min) / 2;
 
   if (max === min) return [0, 0, l];
@@ -49,18 +40,38 @@ function hexToHsl(hex: string): [number, number, number] {
   let h = 0;
 
   switch (max) {
-    case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
-    case g: h = ((b - r) / d + 2) / 6; break;
-    case b: h = ((r - g) / d + 4) / 6; break;
+    case rn: h = ((gn - bn) / d + (gn < bn ? 6 : 0)) / 6; break;
+    case gn: h = ((bn - rn) / d + 2) / 6; break;
+    case bn: h = ((rn - gn) / d + 4) / 6; break;
   }
 
   return [h * 360, s, l];
 }
 
-function rgbToHex(r: number, g: number, b: number): string {
-  return "#" + [r, g, b]
-    .map((v) => Math.round(v).toString(16).padStart(2, "0"))
-    .join("");
+export function hexToHsl(hex: string): [number, number, number] {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return rgbToHsl(r, g, b);
+}
+
+// ─── Per-frame pixel sampling ─────────────────────────────────────────────────
+
+async function sampleFramePixels(
+  framePath: string
+): Promise<Array<[number, number, number]>> {
+  // Resize to 64×64 for fast processing — enough to capture color palette
+  const { data } = await sharp(framePath)
+    .resize(64, 64, { fit: "fill" })
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const pixels: Array<[number, number, number]> = [];
+  for (let i = 0; i + 2 < data.length; i += 3) {
+    pixels.push([data[i], data[i + 1], data[i + 2]]);
+  }
+  return pixels;
 }
 
 // ─── Color extraction ─────────────────────────────────────────────────────────
@@ -71,38 +82,35 @@ export async function extractColorPalette(
   // Analyze every other frame
   const toAnalyze = framePaths.filter((_, i) => i % 2 === 0);
 
-  const allColors: string[] = [];
-  const allLightness: number[] = [];
-  const allSaturation: number[] = [];
+  const allHues: number[] = [];
+  const allSaturations: number[] = [];
+  const allLightnesses: number[] = [];
 
-  const Vibrant = await getVibrant();
+  // Bucket map for dominant color extraction (round RGB to nearest 32)
+  const bucketCounts = new Map<string, number>();
+
   for (const framePath of toAnalyze) {
     try {
-      const palette = await Vibrant.from(framePath).getPalette();
-      const swatches = [
-        palette.Vibrant,
-        palette.Muted,
-        palette.DarkVibrant,
-        palette.DarkMuted,
-        palette.LightVibrant,
-        palette.LightMuted,
-      ].filter(Boolean);
+      const pixels = await sampleFramePixels(framePath);
+      for (const [r, g, b] of pixels) {
+        const [h, s, l] = rgbToHsl(r, g, b);
+        allHues.push(h);
+        allSaturations.push(s);
+        allLightnesses.push(l);
 
-      for (const swatch of swatches) {
-        if (!swatch) continue;
-        const [r, g, b] = swatch.rgb;
-        const hex = rgbToHex(r, g, b);
-        allColors.push(hex);
-        const [, s, l] = hexToHsl(hex);
-        allSaturation.push(s);
-        allLightness.push(l);
+        // Round each channel to nearest 32 to bucket similar colors
+        const br = Math.min(255, Math.round(r / 32) * 32);
+        const bg = Math.min(255, Math.round(g / 32) * 32);
+        const bb = Math.min(255, Math.round(b / 32) * 32);
+        const key = rgbToHex(br, bg, bb);
+        bucketCounts.set(key, (bucketCounts.get(key) ?? 0) + 1);
       }
     } catch {
       // Skip frames that fail (e.g. corrupt JPEG)
     }
   }
 
-  if (!allColors.length) {
+  if (allHues.length === 0) {
     // Fallback if all frames failed
     return {
       dominantColors: ["#808080", "#606060", "#a0a0a0", "#404040", "#c0c0c0", "#202020"],
@@ -113,35 +121,18 @@ export async function extractColorPalette(
     };
   }
 
-  // Deduplicate and take top 6 most representative colors
-  // Simple approach: cluster by frequency — bucket colors and pick most common
-  const colorCounts = new Map<string, number>();
-  for (const color of allColors) {
-    // Round to nearest 16 to bucket similar colors
-    const rounded =
-      "#" +
-      [1, 3, 5]
-        .map((i) =>
-          Math.round(parseInt(color.slice(i, i + 2), 16) / 16) * 16
-        )
-        .map((v) => Math.min(255, v).toString(16).padStart(2, "0"))
-        .join("");
-    colorCounts.set(rounded, (colorCounts.get(rounded) ?? 0) + 1);
-  }
-
-  const sorted = Array.from(colorCounts.entries())
+  // Pick top 6 most-common color buckets
+  const sorted = Array.from(bucketCounts.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 6)
-    .map(([c]) => c);
+    .map(([hex]) => hex);
 
-  // Pad to 6 if fewer unique colors found
   while (sorted.length < 6) {
-    sorted.push(allColors[sorted.length % allColors.length] ?? "#808080");
+    sorted.push("#808080");
   }
 
-  // Determine color temperature from average hue
-  const hues = sorted.map((c) => hexToHsl(c)[0]);
-  const avgHue = hues.reduce((a, b) => a + b, 0) / hues.length;
+  // Color temperature from average hue
+  const avgHue = allHues.reduce((a, b) => a + b, 0) / allHues.length;
   let colorTemperature: "cool" | "neutral" | "warm";
   if ((avgHue >= 0 && avgHue <= 60) || (avgHue >= 300 && avgHue <= 360)) {
     colorTemperature = "warm";
@@ -150,23 +141,25 @@ export async function extractColorPalette(
   } else {
     colorTemperature = "neutral";
   }
-  const colorMood = colorTemperature.charAt(0).toUpperCase() + colorTemperature.slice(1);
+  const colorMood =
+    colorTemperature.charAt(0).toUpperCase() + colorTemperature.slice(1);
 
-  // Determine saturation from average saturation
-  const avgSat = allSaturation.reduce((a, b) => a + b, 0) / allSaturation.length;
+  // Saturation from average saturation
+  const avgSat =
+    allSaturations.reduce((a, b) => a + b, 0) / allSaturations.length;
   let saturation: "desaturated" | "muted" | "normal" | "vivid";
   if (avgSat < 0.2) saturation = "desaturated";
   else if (avgSat < 0.4) saturation = "muted";
   else if (avgSat < 0.65) saturation = "normal";
   else saturation = "vivid";
 
-  // Determine contrast from range of lightness values
-  const minL = Math.min(...allLightness);
-  const maxL = Math.max(...allLightness);
-  const lightnessRange = maxL - minL;
+  // Contrast from lightness range
+  const minL = Math.min(...allLightnesses);
+  const maxL = Math.max(...allLightnesses);
+  const range = maxL - minL;
   let contrast: "low" | "medium" | "high";
-  if (lightnessRange < 0.3) contrast = "low";
-  else if (lightnessRange < 0.6) contrast = "medium";
+  if (range < 0.3) contrast = "low";
+  else if (range < 0.6) contrast = "medium";
   else contrast = "high";
 
   return {
