@@ -5,6 +5,8 @@
  * We enforce a minimum gap of 500 ms between calls to avoid 429s.
  */
 
+import { getProviderKey } from "@/lib/provider-keys";
+
 const ELEVENLABS_BASE = "https://api.elevenlabs.io/v1";
 const MIN_REQUEST_GAP_MS = 500;
 
@@ -40,17 +42,17 @@ async function waitForRateLimit() {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function getApiKey(): string {
-  const key = process.env.ELEVENLABS_API_KEY;
+async function getApiKey(): Promise<string> {
+  const key = await getProviderKey("elevenlabs");
   if (!key || key === "...") {
-    throw new Error("ELEVENLABS_API_KEY is not configured. Add it to your .env file.");
+    throw new Error("ElevenLabs API key is not configured. Add it in Settings -> AI Providers.");
   }
   return key;
 }
 
-function headers(extra?: Record<string, string>) {
+async function headers(extra?: Record<string, string>) {
   return {
-    "xi-api-key": getApiKey(),
+    "xi-api-key": await getApiKey(),
     "Content-Type": "application/json",
     ...extra,
   };
@@ -94,7 +96,7 @@ export async function getVoices(): Promise<ElevenLabsVoice[]> {
   await waitForRateLimit();
 
   const res = await fetch(`${ELEVENLABS_BASE}/voices`, {
-    headers: headers(),
+    headers: await headers(),
     cache: "no-store",
   });
 
@@ -120,7 +122,7 @@ export async function textToSpeech(
 
   const res = await fetch(`${ELEVENLABS_BASE}/text-to-speech/${voiceId}`, {
     method: "POST",
-    headers: headers(),
+    headers: await headers(),
     body: JSON.stringify({
       text,
       model_id: "eleven_multilingual_v2",

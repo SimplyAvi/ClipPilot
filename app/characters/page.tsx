@@ -10,6 +10,8 @@ import { GenerateFromThemeModal } from "./_components/generate-from-theme-modal"
 
 type SearchParams = { q?: string; archived?: string; sort?: string };
 
+export const dynamic = "force-dynamic";
+
 export default async function CharacterLibraryPage({ searchParams }: { searchParams: SearchParams }) {
   const q = searchParams.q?.trim();
   const archived = searchParams.archived === "true";

@@ -12,7 +12,10 @@ export default async function EditCharacterPage({
   params: { id: string };
   searchParams: { projectId?: string };
 }) {
-  const character = await db.character.findUnique({ where: { id: params.id } });
+  const character = await db.character.findUnique({
+    where: { id: params.id },
+    include: { projectCharacters: { select: { id: true } } },
+  });
   if (!character) notFound();
 
   return (

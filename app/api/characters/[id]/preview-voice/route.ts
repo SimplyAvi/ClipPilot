@@ -18,8 +18,8 @@ export async function POST(
     const audioBuffer = await generateVoicePreview(
       character.voiceId,
       "This is a short preview of the character voice.",
-      (character.voicePace as "slow" | "normal" | "fast") ?? "normal",
-      (character.emotionalRange as "restrained" | "moderate" | "expressive") ?? "moderate"
+      normalizePace(character.voicePace ?? "normal"),
+      normalizeEmotionalRange(character.emotionalRange ?? "moderate")
     );
     return new Response(audioBuffer, {
       headers: {
@@ -33,4 +33,18 @@ export async function POST(
     console.error("[POST /api/characters/[id]/preview-voice]", msg);
     return NextResponse.json({ data: null, error: msg }, { status: 502 });
   }
+}
+
+function normalizePace(value: string): "slow" | "normal" | "fast" {
+  const normalized = value.toLowerCase();
+  if (["slow", "measured"].includes(normalized)) return "slow";
+  if (["fast", "quick"].includes(normalized)) return "fast";
+  return "normal";
+}
+
+function normalizeEmotionalRange(value: string): "restrained" | "moderate" | "expressive" {
+  const normalized = value.toLowerCase();
+  if (["low", "restrained"].includes(normalized)) return "restrained";
+  if (["high", "expressive"].includes(normalized)) return "expressive";
+  return "moderate";
 }

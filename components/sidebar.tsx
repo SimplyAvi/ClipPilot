@@ -160,10 +160,10 @@ export function Sidebar() {
 
   return (
     <aside className="flex h-screen w-60 flex-col border-r bg-card">
-      <div className="flex h-16 items-center gap-2 border-b px-6">
+      <Link href="/" className="flex h-16 items-center gap-2 border-b px-6 transition-colors hover:bg-accent">
         <Video className="h-6 w-6 text-primary" />
         <span className="text-lg font-bold tracking-tight">ClipPilot</span>
-      </div>
+      </Link>
 
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
         {/* Primary CTA */}

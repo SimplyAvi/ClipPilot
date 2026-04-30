@@ -37,9 +37,11 @@ type CharacterFormData = {
   voiceTone: string | null;
   voiceNotes: string | null;
   tags: string | null;
+  projectCharacters?: Array<{ id: string }>;
 };
 
 type Voice = { voice_id: string; name: string; category: string };
+type CharacterPayload = Omit<CharacterFormData, "id" | "projectCharacters">;
 
 const blankCharacter: CharacterFormData = {
   name: "",
@@ -80,6 +82,12 @@ export function CharacterForm({
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [voices, setVoices] = useState<Voice[]>([]);
+  const [voiceLoadError, setVoiceLoadError] = useState<string | null>(null);
+  const [previewText, setPreviewText] = useState(
+    initialCharacter?.name
+      ? `I know exactly who I am, and I know what this moment is asking of me.`
+      : "This is the voice I will use when I appear in your scenes."
+  );
   const [generating, setGenerating] = useState(false);
   const [portraitOptions, setPortraitOptions] = useState<Array<{ url: string | null; flagged: boolean; message: string | null }>>([]);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -88,15 +96,21 @@ export function CharacterForm({
   useEffect(() => {
     fetch("/api/elevenlabs/voices")
       .then((res) => res.json())
-      .then((json) => setVoices(json.data ?? []))
-      .catch(() => setVoices([]));
+      .then((json) => {
+        setVoices(json.data ?? []);
+        setVoiceLoadError(json.error ?? null);
+      })
+      .catch(() => {
+        setVoices([]);
+        setVoiceLoadError("Could not load ElevenLabs voices");
+      });
   }, []);
 
   function update<K extends keyof CharacterFormData>(key: K, value: CharacterFormData[K]) {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
-  async function saveCharacter() {
+  async function saveCharacter(options: { redirectToLibrary?: boolean } = {}) {
     setSaving(true);
     setError(null);
     setSaved(false);
@@ -105,7 +119,7 @@ export function CharacterForm({
         method: form.id ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...form,
+          ...toCharacterPayload(form),
           projectId: form.id ? undefined : defaultProjectId ?? undefined,
         }),
       });
@@ -113,7 +127,12 @@ export function CharacterForm({
       if (!res.ok) throw new Error(json.error ?? "Save failed");
       setForm((current) => ({ ...current, id: json.data.id }));
       setSaved(true);
-      router.refresh();
+      if (options.redirectToLibrary) {
+        router.push("/characters");
+        router.refresh();
+      } else {
+        router.refresh();
+      }
       return json.data.id as string;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
@@ -133,6 +152,7 @@ export function CharacterForm({
     if (!id) return;
     setGenerating(true);
     setError(null);
+    setPortraitOptions([]);
     try {
       const res = await fetch("/api/characters/generate-portrait", {
         method: "POST",
@@ -143,7 +163,7 @@ export function CharacterForm({
           age: form.age,
           gender: form.gender,
           ethnicity: form.ethnicity || "unspecified ethnicity",
-          style: form.portraitStyle,
+          style: toPortraitStyle(form.portraitStyle),
         }),
       });
       const json = await res.json();
@@ -157,8 +177,11 @@ export function CharacterForm({
     }
   }
 
+  const isCastInProject = Boolean(form.projectCharacters?.length);
+
   async function selectPortrait(url: string) {
     if (!form.id) return;
+    setError(null);
     const res = await fetch(`/api/characters/${form.id}/set-portrait`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -170,20 +193,31 @@ export function CharacterForm({
       return;
     }
     update("portraitPath", json.data.portraitPath);
+    setSaved(true);
     router.refresh();
   }
 
   async function previewVoice() {
     if (!form.voiceId) return;
+    setError(null);
     const res = await fetch("/api/characters/preview-voice", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ voiceId: form.voiceId, speakingPace: form.voicePace ?? "normal", emotionalRange: form.emotionalRange ?? "moderate" }),
+      body: JSON.stringify({
+        voiceId: form.voiceId,
+        text: previewText,
+        speakingPace: form.voicePace ?? "normal",
+        emotionalRange: form.emotionalRange ?? "moderate",
+      }),
     });
-    if (!res.ok) return;
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      setError(json?.error ?? "Voice preview failed");
+      return;
+    }
     const url = URL.createObjectURL(await res.blob());
     audioRef.current = new Audio(url);
-    audioRef.current.play();
+    await audioRef.current.play().catch(() => setError("Browser blocked autoplay. Try clicking Preview Voice again."));
   }
 
   return (
@@ -191,42 +225,54 @@ export function CharacterForm({
       <div className="grid gap-8 lg:grid-cols-[360px_minmax(0,1fr)]">
         <aside className="space-y-4">
           <PortraitFrame src={form.portraitPath} alt={form.name || "Character portrait"} size="full" />
-          <div className="grid grid-cols-2 gap-2">
-            {["cinematic-realistic", "stylized", "illustrated", "noir"].map((style) => (
-              <button
-                key={style}
-                type="button"
-                onClick={() => update("portraitStyle", style)}
-                className={`rounded-lg border p-3 text-left text-sm capitalize ${form.portraitStyle === style ? "border-primary bg-accent" : ""}`}
-              >
-                {style.replace("-", " ")}
-              </button>
-            ))}
-          </div>
-          <Button className="w-full" onClick={generatePortrait} disabled={generating || !form.physicalDescription || !form.name}>
-            {generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
-            Generate Portrait
-          </Button>
+          {isCastInProject ? (
+            <div className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
+              This character is already cast in a project, so their core look is locked for continuity. Update scene usage from the project cast page.
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                {["cinematic-realistic", "stylized", "illustrated", "noir"].map((style) => (
+                  <button
+                    key={style}
+                    type="button"
+                    onClick={() => update("portraitStyle", style)}
+                    className={`rounded-lg border p-3 text-left text-sm capitalize ${form.portraitStyle === style ? "border-primary bg-accent" : ""}`}
+                  >
+                    {style.replace("-", " ")}
+                  </button>
+                ))}
+              </div>
+              <Button className="w-full" onClick={generatePortrait} disabled={generating || !form.physicalDescription || !form.name}>
+                {generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
+                {form.portraitPath ? "Generate New Portrait Options" : "Generate Portrait"}
+              </Button>
+            </>
+          )}
           {generating && <div className="aspect-[3/4] animate-pulse rounded-lg bg-muted" />}
           {portraitOptions.length > 0 && (
-            <div className="grid grid-cols-3 gap-2">
-              {portraitOptions.map((option, index) => (
-                <button
-                  key={`${option.url}-${index}`}
-                  type="button"
-                  disabled={!option.url}
-                  onClick={() => option.url && selectPortrait(option.url)}
-                  className="rounded-lg text-left disabled:cursor-not-allowed"
-                >
-                  {option.url ? (
-                    <PortraitFrame src={option.url} alt={`Portrait option ${index + 1}`} size="sm" />
-                  ) : (
-                    <div className="flex aspect-[3/4] items-center justify-center rounded-lg border bg-amber-50 p-2 text-center text-xs text-amber-800">
-                      Portrait flagged - regenerate or adjust description
-                    </div>
-                  )}
-                </button>
-              ))}
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">Select one of the new portrait options:</p>
+              <div className="grid grid-cols-3 gap-2">
+                {portraitOptions.map((option, index) => (
+                  <button
+                    key={`${option.url}-${index}`}
+                    type="button"
+                    disabled={!option.url}
+                    onClick={() => option.url && selectPortrait(option.url)}
+                    className={`rounded-lg text-left disabled:cursor-not-allowed ${form.portraitPath === option.url ? "ring-2 ring-primary" : ""}`}
+                    title={option.url ? "Use this portrait" : option.message ?? "Portrait unavailable"}
+                  >
+                    {option.url ? (
+                      <PortraitFrame src={option.url} alt={`Portrait option ${index + 1}`} size="sm" />
+                    ) : (
+                      <div className="flex aspect-[3/4] items-center justify-center rounded-lg border bg-amber-50 p-2 text-center text-xs text-amber-800">
+                        Portrait flagged - regenerate or adjust description
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </aside>
@@ -289,10 +335,15 @@ export function CharacterForm({
             <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Voice</h2>
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="ElevenLabs Voice">
-                <Select value={form.voiceId ?? ""} onValueChange={(value) => update("voiceId", value)}>
+                <Select value={form.voiceId ?? ""} onValueChange={(value) => update("voiceId", value)} disabled={voices.length === 0}>
                   <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
                   <SelectContent>{voices.map((voice) => <SelectItem key={voice.voice_id} value={voice.voice_id}>{voice.name}</SelectItem>)}</SelectContent>
                 </Select>
+                {voices.length === 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {voiceLoadError ?? "No ElevenLabs voices available. Connect ElevenLabs in Settings to assign a voice."}
+                  </p>
+                )}
               </Field>
               <Field label="Pace">
                 <Select value={form.voicePace ?? "normal"} onValueChange={(value) => update("voicePace", value)}>
@@ -304,6 +355,16 @@ export function CharacterForm({
               <Field label="Tone"><Input value={form.voiceTone ?? ""} onChange={(e) => update("voiceTone", e.target.value)} /></Field>
             </div>
             <Field label="Voice Notes"><Textarea rows={3} value={form.voiceNotes ?? ""} onChange={(e) => update("voiceNotes", e.target.value)} /></Field>
+            <Field label="Preview Sentence">
+              <Textarea
+                rows={2}
+                value={previewText}
+                maxLength={300}
+                onChange={(e) => setPreviewText(e.target.value)}
+                placeholder="Type a short line for this voice to read."
+              />
+              <p className="mt-1 text-xs text-muted-foreground">Edit this line, then click Preview Voice to hear the selected voice.</p>
+            </Field>
             <Button variant="outline" type="button" disabled={!form.voiceId} title={!form.voiceId ? "Assign a voice first" : undefined} onClick={previewVoice}>
               <Play className="mr-2 h-4 w-4" />Preview Voice
             </Button>
@@ -316,7 +377,7 @@ export function CharacterForm({
             </div>
             <div className="flex gap-2">
               <Button variant="outline" onClick={saveAndCast} disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save & Cast in Project</Button>
-              <Button onClick={saveCharacter} disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save Character</Button>
+              <Button onClick={() => saveCharacter({ redirectToLibrary: true })} disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save Character</Button>
             </div>
           </div>
         </div>
@@ -333,6 +394,39 @@ export function CharacterForm({
       )}
     </>
   );
+}
+
+function toPortraitStyle(style: string | null): "cinematic-realistic" | "stylized" | "illustrated" | "noir" {
+  if (style === "stylized" || style === "illustrated" || style === "noir") return style;
+  return "cinematic-realistic";
+}
+
+function toCharacterPayload(form: CharacterFormData): CharacterPayload {
+  return {
+    name: form.name,
+    role: form.role,
+    age: form.age,
+    gender: form.gender,
+    ethnicity: form.ethnicity,
+    physicalDescription: form.physicalDescription,
+    biography: form.biography,
+    personality: form.personality,
+    motivations: form.motivations,
+    fears: form.fears,
+    quirks: form.quirks,
+    emotionalRange: form.emotionalRange,
+    gestureTendencies: form.gestureTendencies,
+    forbiddenChanges: form.forbiddenChanges,
+    portraitPath: form.portraitPath,
+    portraitPrompt: form.portraitPrompt,
+    portraitStyle: form.portraitStyle,
+    voiceId: form.voiceId,
+    voicePace: form.voicePace,
+    voiceAccent: form.voiceAccent,
+    voiceTone: form.voiceTone,
+    voiceNotes: form.voiceNotes,
+    tags: form.tags,
+  };
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

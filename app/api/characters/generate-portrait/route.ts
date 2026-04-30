@@ -12,8 +12,8 @@ const GeneratePortraitSchema = z.object({
   characterId: z.string().min(1),
   physicalDescription: z.string().min(10).max(4000),
   age: z.number().int().min(5).max(100),
-  gender: z.string().min(1).max(60),
-  ethnicity: z.string().min(1).max(120),
+  gender: z.string().min(1).max(120),
+  ethnicity: z.string().min(1).max(1000),
   style: z.enum(["cinematic-realistic", "stylized", "illustrated", "noir"]),
 });
 

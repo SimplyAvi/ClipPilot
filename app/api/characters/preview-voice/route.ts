@@ -5,8 +5,8 @@ import { generateVoicePreview } from "@/lib/voice-client";
 const PreviewSchema = z.object({
   voiceId: z.string().min(1, "voiceId is required"),
   text: z.string().max(300).optional(),
-  speakingPace: z.enum(["slow", "normal", "fast"]).default("normal"),
-  emotionalRange: z.enum(["restrained", "moderate", "expressive"]).default("moderate"),
+  speakingPace: z.string().default("normal"),
+  emotionalRange: z.string().default("moderate"),
 });
 
 /**
@@ -16,13 +16,6 @@ const PreviewSchema = z.object({
  * as audio/mpeg so the client can play it directly via a Blob URL.
  */
 export async function POST(request: Request) {
-  if (!process.env.ELEVENLABS_API_KEY || process.env.ELEVENLABS_API_KEY === "...") {
-    return NextResponse.json(
-      { error: "ELEVENLABS_API_KEY is not configured." },
-      { status: 503 }
-    );
-  }
-
   let body: unknown;
   try {
     body = await request.json();
@@ -44,8 +37,8 @@ export async function POST(request: Request) {
     const audioBuffer = await generateVoicePreview(
       voiceId,
       text ?? null,
-      speakingPace,
-      emotionalRange
+      normalizePace(speakingPace),
+      normalizeEmotionalRange(emotionalRange)
     );
 
     // Return raw audio so the client can create a Blob URL for <audio>
@@ -61,4 +54,18 @@ export async function POST(request: Request) {
     console.error("[preview-voice]", msg);
     return NextResponse.json({ error: msg }, { status: 502 });
   }
+}
+
+function normalizePace(value: string): "slow" | "normal" | "fast" {
+  const normalized = value.toLowerCase();
+  if (["slow", "measured"].includes(normalized)) return "slow";
+  if (["fast", "quick"].includes(normalized)) return "fast";
+  return "normal";
+}
+
+function normalizeEmotionalRange(value: string): "restrained" | "moderate" | "expressive" {
+  const normalized = value.toLowerCase();
+  if (["low", "restrained"].includes(normalized)) return "restrained";
+  if (["high", "expressive"].includes(normalized)) return "expressive";
+  return "moderate";
 }

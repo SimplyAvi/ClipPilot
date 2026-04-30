@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getVoices } from "@/lib/voice-client";
+import { getProviderKey } from "@/lib/provider-keys";
 
 /**
  * GET /api/elevenlabs/voices
@@ -9,9 +10,9 @@ import { getVoices } from "@/lib/voice-client";
 export const revalidate = 300; // 5-minute ISR cache
 
 export async function GET() {
-  if (!process.env.ELEVENLABS_API_KEY || process.env.ELEVENLABS_API_KEY === "...") {
+  if (!(await getProviderKey("elevenlabs"))) {
     return NextResponse.json(
-      { data: null, error: "ELEVENLABS_API_KEY is not configured." },
+      { data: [], error: "ElevenLabs is not configured. Add it in Settings -> AI Providers." },
       { status: 503 }
     );
   }
