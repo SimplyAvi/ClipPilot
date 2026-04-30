@@ -10,7 +10,7 @@ export async function GET(request: Request) {
 
   try {
     const url = await getSignedViewUrl(key);
-    return NextResponse.redirect(url);
+    return NextResponse.redirect(new URL(url, request.url));
   } catch (err) {
     console.error("[GET /api/storage/view]", err);
     return NextResponse.json({ data: null, error: "File not found" }, { status: 404 });

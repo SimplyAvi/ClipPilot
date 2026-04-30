@@ -147,36 +147,40 @@ model Project {
 }
 
 model Character {
-  id                  String                        @id @default(cuid())
-  name                String
-  role                String?
-  age                 Int?
-  gender              String?
-  ethnicity           String?
-  physicalDescription String?                       @db.Text
-  biography           String?                       @db.Text
-  personality         String?                       @db.Text
-  motivations         String?                       @db.Text
-  fears               String?                       @db.Text
-  quirks              String?                       @db.Text
-  emotionalRange      String?
-  gestureTendencies   String?                       @db.Text
-  forbiddenChanges    String?                       @db.Text
-  portraitPath        String?
-  portraitPrompt      String?                       @db.Text
-  portraitStyle       String?
-  voiceId             String?
-  voicePace           String?
-  voiceAccent         String?
-  voiceTone           String?
-  voiceNotes          String?                       @db.Text
-  isArchived          Boolean                       @default(false)
-  tags                String?
-  createdAt           DateTime                      @default(now())
-  updatedAt           DateTime                      @updatedAt
-  projectCharacters   ProjectCharacter[]
-  dialogueLines       DialogueLine[]
-  portraitGenerations CharacterPortraitGeneration[]
+  id                   String                        @id @default(cuid())
+  name                 String
+  role                 String?
+  age                  Int?
+  gender               String?
+  ethnicity            String?
+  physicalDescription  String?                       @db.Text
+  biography            String?                       @db.Text
+  personality          String?                       @db.Text
+  motivations          String?                       @db.Text
+  fears                String?                       @db.Text
+  quirks               String?                       @db.Text
+  emotionalRange       String?
+  gestureTendencies    String?                       @db.Text
+  forbiddenChanges     String?                       @db.Text
+  portraitPath         String?
+  portraitPrompt       String?                       @db.Text
+  portraitStyle        String?
+  voiceId              String?
+  voicePace            String?
+  voiceAccent          String?
+  voiceTone            String?
+  voiceNotes           String?                       @db.Text
+  isArchived           Boolean                       @default(false)
+  tags                 String?
+  generatedFromThemeId String?
+  generatedFromTheme   Theme?                        @relation(fields: [generatedFromThemeId], references: [id])
+  createdAt            DateTime                      @default(now())
+  updatedAt            DateTime                      @updatedAt
+  projectCharacters    ProjectCharacter[]
+  dialogueLines        DialogueLine[]
+  portraitGenerations  CharacterPortraitGeneration[]
+
+  @@index([generatedFromThemeId])
 }
 
 model ProjectCharacter {
@@ -588,46 +592,47 @@ model Template {
 // ─── Phase 15: Theme Creation System ─────────────────────────────────────────
 
 model Theme {
-  id                     String    @id @default(cuid())
+  id                     String   @id @default(cuid())
   name                   String
-  description            String?   @db.Text
+  description            String?  @db.Text
   sourceUrl              String?
-  sourcePlatform         String?   // youtube | instagram | facebook | manual
-  referenceFramePaths    String?   @db.Text  // JSON array of local frame paths
-  coverFrameIndex        Int       @default(0)
-  colorPalette           String?   // JSON array of hex strings
+  sourcePlatform         String? // youtube | instagram | facebook | manual
+  referenceFramePaths    String?  @db.Text // JSON array of local frame paths
+  coverFrameIndex        Int      @default(0)
+  colorPalette           String? // JSON array of hex strings
   colorMood              String?
-  colorTemperature       String?   // cool | neutral | warm
-  saturation             String?   // desaturated | muted | normal | vivid
-  contrast               String?   // low | medium | high
+  colorTemperature       String? // cool | neutral | warm
+  saturation             String? // desaturated | muted | normal | vivid
+  contrast               String? // low | medium | high
   genre                  String?
   tone                   String?
   visualStyle            String?
   audioStyle             String?
   lightingStyle          String?
   cameraMovement         String?
-  dominantShotTypes      String?   // JSON array
+  dominantShotTypes      String? // JSON array
   pacing                 String?
   avgShotDurationSeconds Float?
   characterAgeRange      String?
-  characterAppearance    String?   @db.Text
+  characterAppearance    String?  @db.Text
   characterMood          String?
   primaryEnvironment     String?
-  timeOfDay              String?   // JSON array
-  environmentDescription String?   @db.Text
+  timeOfDay              String? // JSON array
+  environmentDescription String?  @db.Text
   musicGenre             String?
   musicMood              String?
   musicTempo             String?
-  audioNotes             String?   @db.Text
-  visualPromptModifier   String?   @db.Text
-  audioPromptModifier    String?   @db.Text
-  cinematographyNotes    String?   @db.Text
-  analysisRawJson        String?   @db.Text
-  usageCount             Int       @default(0)
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  audioNotes             String?  @db.Text
+  visualPromptModifier   String?  @db.Text
+  audioPromptModifier    String?  @db.Text
+  cinematographyNotes    String?  @db.Text
+  analysisRawJson        String?  @db.Text
+  usageCount             Int      @default(0)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
-  projectsUsingTheme     Project[]
+  projectsUsingTheme  Project[]
+  generatedCharacters Character[]
 }
 
 // ─── Phase 12: Project Version History ───────────────────────────────────────

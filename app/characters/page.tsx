@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { PortraitFrame } from "@/components/ui/portrait-frame";
 import { Film, Plus, Search, UserRound } from "lucide-react";
+import { GenerateFromThemeModal } from "./_components/generate-from-theme-modal";
 
 type SearchParams = { q?: string; archived?: string; sort?: string };
 
@@ -35,6 +36,19 @@ export default async function CharacterLibraryPage({ searchParams }: { searchPar
     },
     orderBy: sort === "name" ? { name: "asc" } : { createdAt: "desc" },
   });
+  const themes = await db.theme.findMany({
+    orderBy: [{ usageCount: "desc" }, { createdAt: "desc" }],
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      genre: true,
+      tone: true,
+      colorPalette: true,
+      colorMood: true,
+      coverFrameIndex: true,
+    },
+  });
 
   const sorted = sort === "used" ? [...characters].sort((a, b) => b.projectCharacters.length - a.projectCharacters.length) : characters;
   const portraitUrls = new Map<string, string>();
@@ -53,10 +67,15 @@ export default async function CharacterLibraryPage({ searchParams }: { searchPar
           <h1 className="text-3xl font-bold tracking-tight">Characters</h1>
           <p className="text-sm text-muted-foreground">Reusable cast library for every movie and project.</p>
         </div>
-        <Button asChild>
-          <Link href="/characters/new"><Plus className="mr-2 h-4 w-4" />New Character</Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild>
+            <Link href="/characters/new"><Plus className="mr-2 h-4 w-4" />New Character</Link>
+          </Button>
+          <GenerateFromThemeModal themes={themes} />
+        </div>
       </div>
+
+      <DraftRecoveryBanner />
 
       <form className="mb-6 grid gap-3 lg:grid-cols-[1fr_160px_240px]">
         <div className="relative">
@@ -113,6 +132,35 @@ export default async function CharacterLibraryPage({ searchParams }: { searchPar
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+function DraftRecoveryBanner() {
+  return (
+    <div
+      id="generated-character-draft-banner"
+      className="mb-6 hidden rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"
+      suppressHydrationWarning
+    >
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `
+          (() => {
+            const id = localStorage.getItem('generated-character:last-draft');
+            const el = document.currentScript?.parentElement;
+            if (!id || !el || !localStorage.getItem('generated-character:' + id)) return;
+            el.classList.remove('hidden');
+            el.innerHTML = 'You have an unsaved character draft. <a class="font-semibold underline" href="/characters/review/' + id + '">Resume</a> <button class="ml-3 underline" type="button" id="discard-generated-character-draft">Discard</button>';
+            document.getElementById('discard-generated-character-draft')?.addEventListener('click', () => {
+              localStorage.removeItem('generated-character:' + id);
+              localStorage.removeItem('generated-character:last-draft');
+              el.classList.add('hidden');
+            });
+          })();
+        `,
+        }}
+      />
     </div>
   );
 }

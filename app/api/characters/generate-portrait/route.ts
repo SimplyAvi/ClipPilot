@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { checkImageLikeness } from "@/lib/compliance/likeness-check";
 import { getProviderKey } from "@/lib/provider-keys";
+import { createSdxlPrediction, waitForReplicatePrediction } from "@/lib/replicate";
 import { storage } from "@/lib/storage";
 import { characterPortraitPath, slugify } from "@/lib/storage/naming";
 import { appendGenerationLog } from "@/lib/storage/generation-log";
@@ -74,7 +75,7 @@ Entirely fictional person - not based on or resembling any real person, living o
 `.trim();
 
   try {
-    const prediction = await createReplicatePrediction(token, portraitPrompt);
+    const prediction = await createSdxlPrediction(token, portraitPrompt);
     const outputUrls = await waitForReplicatePrediction(token, prediction.urls.get);
 
     const variants = await Promise.all(
@@ -137,41 +138,4 @@ Entirely fictional person - not based on or resembling any real person, living o
       { status: 502 }
     );
   }
-}
-
-async function createReplicatePrediction(token: string, prompt: string) {
-  const res = await fetch("https://api.replicate.com/v1/models/stability-ai/sdxl/predictions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      Prefer: "wait",
-    },
-    body: JSON.stringify({
-      input: {
-        prompt,
-        negative_prompt:
-          "real person, celebrity, public figure, politician, athlete, logo, text, watermark, brand, copyright, trademarked",
-        width: 768,
-        height: 1024,
-        num_outputs: 3,
-      },
-    }),
-  });
-  if (!res.ok) throw new Error(`Replicate failed: ${res.status}`);
-  return res.json() as Promise<{ urls: { get: string }; output?: string[]; status: string }>;
-}
-
-async function waitForReplicatePrediction(token: string, getUrl: string): Promise<string[]> {
-  for (let attempt = 0; attempt < 60; attempt++) {
-    const res = await fetch(getUrl, { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) throw new Error(`Replicate poll failed: ${res.status}`);
-    const prediction = (await res.json()) as { status: string; output?: string[]; error?: string };
-    if (prediction.status === "succeeded" && prediction.output) return prediction.output;
-    if (prediction.status === "failed" || prediction.status === "canceled") {
-      throw new Error(prediction.error ?? "Replicate prediction failed");
-    }
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-  throw new Error("Replicate prediction timed out");
 }

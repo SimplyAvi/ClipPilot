@@ -21,6 +21,10 @@ export default async function ThemeDetailPage({ params }: { params: { id: string
         select: { id: true, name: true, status: true, platform: true, thumbnailPath: true },
         orderBy: { updatedAt: "desc" },
       },
+      generatedCharacters: {
+        select: { id: true, name: true, role: true, portraitPath: true },
+        orderBy: { createdAt: "desc" },
+      },
       _count: { select: { projectsUsingTheme: true } },
     },
   });
@@ -43,6 +47,7 @@ export default async function ThemeDetailPage({ params }: { params: { id: string
     projectsUsingTheme: theme.projectsUsingTheme.map((p) => ({
       ...p,
     })),
+    generatedCharacters: theme.generatedCharacters,
   };
 
   return <ThemeDetailClient theme={serialized} />;

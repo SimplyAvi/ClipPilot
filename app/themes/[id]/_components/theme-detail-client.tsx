@@ -5,8 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft, Pencil, Trash2, ArrowRight, Film, ExternalLink,
-  CheckCircle2
+  Plus
 } from "lucide-react";
+import { PortraitFrame } from "@/components/ui/portrait-frame";
+import { GenerateFromThemeModal } from "@/app/characters/_components/generate-from-theme-modal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -16,6 +18,13 @@ interface Project {
   status: string;
   platform: string | null;
   thumbnailPath: string | null;
+}
+
+interface GeneratedCharacter {
+  id: string;
+  name: string;
+  role: string | null;
+  portraitPath: string | null;
 }
 
 export interface ThemeDetailData {
@@ -56,6 +65,7 @@ export interface ThemeDetailData {
   usageCount: number;
   createdAt: string;
   projectsUsingTheme: Project[];
+  generatedCharacters: GeneratedCharacter[];
   _count: { projectsUsingTheme: number };
 }
 
@@ -302,6 +312,42 @@ export function ThemeDetailClient({ theme }: { theme: ThemeDetailData }) {
             <p className="text-sm text-muted-foreground">{theme.characterAppearance}</p>
           </div>
         )}
+      </div>
+
+      {/* Projects using this theme */}
+      <div className="space-y-3">
+        <h2 className="text-base font-semibold">Characters Generated from This Theme</h2>
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {theme.generatedCharacters.map((character) => (
+            <Link
+              key={character.id}
+              href={`/characters/${character.id}`}
+              className="w-40 flex-shrink-0 overflow-hidden rounded-lg border bg-card hover:bg-accent transition-colors"
+            >
+              <PortraitFrame src={character.portraitPath} alt={character.name} size="sm" className="rounded-b-none border-0" />
+              <div className="p-3">
+                <p className="truncate text-sm font-semibold">{character.name}</p>
+                <p className="truncate text-xs text-muted-foreground">{character.role ?? "Character"}</p>
+              </div>
+            </Link>
+          ))}
+          <div className="flex h-[250px] w-40 flex-shrink-0 items-center justify-center rounded-lg border border-dashed bg-muted/30 p-4 text-center">
+            <GenerateFromThemeModal
+              themes={[{
+                id: theme.id,
+                name: theme.name,
+                description: theme.description,
+                genre: theme.genre,
+                tone: theme.tone,
+                colorPalette: JSON.stringify(theme.colorPalette),
+                colorMood: theme.colorMood,
+                coverFrameIndex: theme.coverFrameIndex,
+              }]}
+              initialThemeId={theme.id}
+              triggerClassName="h-full w-full bg-transparent text-foreground hover:bg-accent"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Projects using this theme */}

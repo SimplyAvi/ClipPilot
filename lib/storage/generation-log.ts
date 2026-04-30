@@ -3,15 +3,16 @@ import { generationLogPath } from "./naming";
 
 export type GenerationLogEntry = {
   timestamp: string;
-  type: "video" | "dialogue" | "music" | "image" | "caption" | "export";
+  type: "video" | "dialogue" | "music" | "image" | "caption" | "export" | "character_generated";
   provider: string;
   model: string;
   inputPath?: string;
-  outputPath: string;
+  outputPath?: string;
   durationSeconds?: number;
   cost: number;
   status: "success" | "failed";
   error?: string;
+  [key: string]: unknown;
 };
 
 export async function appendGenerationLog(
