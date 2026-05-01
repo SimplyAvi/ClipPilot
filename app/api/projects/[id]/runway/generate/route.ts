@@ -6,6 +6,8 @@ import { type ClipSpec, planClips } from "@/lib/runway/clip-planner";
 import { createRunwayJob } from "@/lib/generation/job-manager";
 import { getProviderConfig, type VideoAspectRatio } from "@/lib/video-providers";
 import { storage } from "@/lib/storage";
+import { assembleProject } from "@/lib/runway/assembler";
+import { muxAudioOntoClip, sliceAudioSegment } from "@/lib/runway/audio-slicer";
 
 const BodySchema = z.object({
   ratio: z.enum(["1280:720", "720:1280", "1104:832"]).optional(),
@@ -64,12 +66,12 @@ export async function POST(request: Request, { params }: { params: { id: string 
       }).catch(() => null);
       const existingVideoPath = existing?.muxedVideoPath ?? existing?.videoPath;
       if (existingVideoPath) {
-        await markReusableClip(project.id, clip, existingVideoPath);
+        await markReusableClip(project.id, clip, existingVideoPath, project.projectSlug ?? `projects/${project.id}`, existing?.audioPath ?? undefined);
         continue;
       }
       const reusablePath = await findReusableTestClipPath(project.projectSlug ?? `projects/${project.id}`, clip);
       if (reusablePath) {
-        await markReusableClip(project.id, clip, reusablePath);
+        await markReusableClip(project.id, clip, reusablePath, project.projectSlug ?? `projects/${project.id}`);
         continue;
       }
       queuedClips.push(clip);
@@ -82,6 +84,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       if (!String(err instanceof Error ? err.message : err).includes("Unknown argument")) throw err;
     });
     if (queuedClips.length === 0) {
+      const assembledPath = await assembleProject(params.id);
       return NextResponse.json({
         data: {
           generationJobId: null,
@@ -91,6 +94,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
           providerId,
           providerLabel: providerConfig.label,
           estimatedCostUsd: 0,
+          assembledVideoPath: assembledPath,
+          assembledVideoUrl: await storage.getUrl(assembledPath),
         },
         error: null,
       });
@@ -176,7 +181,24 @@ function mergeExistingPlan(
   });
 }
 
-async function markReusableClip(projectId: string, clip: Awaited<ReturnType<typeof planClips>>[number], videoPath: string) {
+async function markReusableClip(
+  projectId: string,
+  clip: Awaited<ReturnType<typeof planClips>>[number],
+  videoPath: string,
+  projectSlug: string,
+  existingAudioPath?: string
+) {
+  const audioPath = existingAudioPath ?? (clip.sourceAudioPath
+    ? await sliceAudioSegment(projectId, clip.sceneIndex, clip.clipIndex, clip.startTimeOffset, clip.durationSeconds, clip.sourceAudioPath)
+    : null);
+  const muxedVideoPath = audioPath
+    ? await muxAudioOntoClip(
+      videoPath,
+      audioPath,
+      `${projectSlug}/video/clips/${clip.id}_muxed.mp4`,
+      { projectId, clipId: clip.id, provider: "ffmpeg" }
+    )
+    : videoPath;
   const fullData = {
     sceneIndex: clip.sceneIndex,
     clipIndex: clip.clipIndex,
@@ -185,8 +207,8 @@ async function markReusableClip(projectId: string, clip: Awaited<ReturnType<type
     endImagePath: clip.endImagePath,
     runwayTaskId: null,
     videoPath,
-    muxedVideoPath: videoPath,
-    audioPath: null,
+    muxedVideoPath,
+    audioPath,
     status: "complete",
     queuePosition: null,
     completedAt: new Date(),
@@ -211,8 +233,8 @@ async function markReusableClip(projectId: string, clip: Awaited<ReturnType<type
         endImagePath: clip.endImagePath,
         runwayTaskId: null,
         videoPath,
-        muxedVideoPath: videoPath,
-        audioPath: null,
+        muxedVideoPath,
+        audioPath,
       },
       create: {
         projectId,
@@ -224,8 +246,8 @@ async function markReusableClip(projectId: string, clip: Awaited<ReturnType<type
         endImagePath: clip.endImagePath,
         runwayTaskId: null,
         videoPath,
-        muxedVideoPath: videoPath,
-        audioPath: null,
+        muxedVideoPath,
+        audioPath,
       },
     });
   }

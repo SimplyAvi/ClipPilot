@@ -256,7 +256,15 @@ async function processRunwayGeneration(job: Job<RunwayGenerationJob>) {
     }
   }
 
-  const failedBeforeAssembly = await db.runwayClip.findFirst({ where: { projectId, status: "failed" } });
+  await normalizeSavedClips(projectId);
+  const failedBeforeAssembly = await db.runwayClip.findFirst({
+    where: {
+      projectId,
+      status: "failed",
+      videoPath: null,
+      muxedVideoPath: null,
+    },
+  });
   if (failedBeforeAssembly) {
     await appendLog(generationJobId, "warning", "Runway generation stopped because a clip failed.");
     return;
@@ -368,11 +376,31 @@ function runwayBroadcast(projectId: string, event: RunwaySSEEvent) {
 }
 
 async function calculateRunningCost(projectId: string): Promise<number> {
+  await normalizeSavedClips(projectId);
   const clips = await db.runwayClip.findMany({
     where: { projectId, status: "complete" },
     select: { costUsd: true },
   });
   return clips.reduce((sum, clip) => sum + (clip.costUsd ?? 0), 0);
+}
+
+async function normalizeSavedClips(projectId: string): Promise<void> {
+  await db.runwayClip.updateMany({
+    where: {
+      projectId,
+      status: { not: "complete" },
+      OR: [
+        { videoPath: { not: null } },
+        { muxedVideoPath: { not: null } },
+      ],
+    },
+    data: {
+      status: "complete",
+      errorMessage: null,
+      queuePosition: null,
+      completedAt: new Date(),
+    },
+  }).catch(() => undefined);
 }
 
 async function refreshQueuePositions(projectId: string): Promise<void> {
