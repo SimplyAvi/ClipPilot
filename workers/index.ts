@@ -4,10 +4,12 @@
  */
 import { startScriptParseWorker } from "./script-parse.worker";
 import { startSceneGenerationWorker } from "./scene-generation.worker";
+import { startRunwayGenerationWorker } from "@/lib/runway/generation-worker";
 
 const workers = [
   startScriptParseWorker(),
   startSceneGenerationWorker(),
+  startRunwayGenerationWorker(),
 ];
 
 console.log(`[workers] Started ${workers.length} worker(s)`);

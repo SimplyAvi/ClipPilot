@@ -2,7 +2,7 @@ import fs from "fs";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getLocalStoragePath, isR2Configured, storage } from "@/lib/storage";
+import { getLocalStoragePath, getR2Config, storage } from "@/lib/storage";
 import { slugify } from "@/lib/storage/naming";
 
 const SaveStorageSchema = z.object({
@@ -10,7 +10,9 @@ const SaveStorageSchema = z.object({
 });
 
 export async function GET() {
+  const r2Config = await getR2Config();
   const setting = await db.storageSetting.findFirst({ orderBy: { updatedAt: "desc" } }).catch(() => null);
+  const backend = r2Config ? "r2" : "local";
   const projectsNeedingFolders = await db.project.count({
     where: { storageFolderInitialized: false },
   }).catch(() => 0);
@@ -24,7 +26,7 @@ export async function GET() {
       const slug = project.projectSlug!;
       const files = await storage.list(slug).catch(() => []);
       const sizeBytes = await storage.getProjectSize(slug).catch(() => 0);
-      return { projectId: project.id, projectName: project.name, projectSlug: slug, files: files.length, sizeBytes, location: storage.backend() };
+      return { projectId: project.id, projectName: project.name, projectSlug: slug, files: files.length, sizeBytes, location: backend };
     })
   );
 
@@ -32,10 +34,10 @@ export async function GET() {
     data: {
       localRootPath: setting?.localRootPath ?? (await getLocalStoragePath()),
       useLocalStorage: setting?.useLocalStorage ?? true,
-      backend: storage.backend(),
-      r2Configured: isR2Configured(),
-      r2BucketName: process.env.R2_BUCKET_NAME ?? null,
-      r2AccountSuffix: (process.env.R2_ACCOUNT_ID ?? process.env.CLOUDFLARE_ACCOUNT_ID ?? "").slice(-4) || null,
+      backend,
+      r2Configured: Boolean(r2Config),
+      r2BucketName: r2Config?.bucket ?? null,
+      r2AccountSuffix: r2Config?.accountId.slice(-4) || null,
       projectsNeedingFolders,
       usage,
     },

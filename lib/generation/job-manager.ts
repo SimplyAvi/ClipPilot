@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import type { ScriptAnalysis } from "@/lib/prompts/script-analysis";
 import { estimateJobDuration } from "@/lib/generation/time-estimator";
 import { broadcast } from "@/lib/generation/sse-broadcaster";
+import type { ClipSpec } from "@/lib/runway/clip-planner";
+import { getProviderConfig } from "@/lib/video-providers";
 
 type LogLevel = "info" | "success" | "warning" | "error";
 
@@ -28,6 +30,12 @@ const VISUAL_STAGES = [
   ["assembly_stitch", "Assembly & Stitch"],
   ["color_grade", "Color Grade"],
   ["export", "Export"],
+] as const;
+
+const RUNWAY_STAGES = [
+  ["runway_planning", "Runway Clip Planning"],
+  ["runway_generation", "Runway Image-to-Video"],
+  ["runway_assembly", "Runway Assembly"],
 ] as const;
 
 export async function createJob(projectId: string, fromCheckpoint = false) {
@@ -65,6 +73,42 @@ export async function createJob(projectId: string, fromCheckpoint = false) {
   }
 
   await appendLog(job.id, "info", fromCheckpoint && checkpoint.size > 0 ? `Resuming from checkpoint - skipping ${checkpoint.size} completed tasks` : "Generation job created");
+  const hydrated = await getJob(job.id);
+  broadcast(projectId, { type: "job_update", data: hydrated });
+  return hydrated;
+}
+
+export async function createRunwayJob(projectId: string, clips: ClipSpec[], providerId = "runway") {
+  const provider = getProviderConfig(providerId);
+  await db.generationJob.deleteMany({ where: { projectId } });
+  const job = await db.generationJob.create({
+    data: {
+      projectId,
+      status: "queued",
+      estimatedTotalSeconds: clips.length * 45 + 30,
+      totalCostEstimate: clips.reduce((sum, clip) => sum + (provider.pricing[clip.durationSeconds] ?? 0), 0),
+      currentStageLabel: `${provider.label} Clip Planning`,
+    },
+  });
+
+  const stages = new Map<string, GenerationTask>();
+  for (let i = 0; i < RUNWAY_STAGES.length; i++) {
+    const [taskType, label] = RUNWAY_STAGES[i];
+    stages.set(taskType, await createTask(job.id, taskType, label, null, i + 1, { stableKey: `stage:${taskType}` }, new Set()));
+  }
+  const generationStage = stages.get("runway_generation");
+  for (let i = 0; i < clips.length; i++) {
+    await createTask(
+      job.id,
+      "runway_clip",
+      `Generating ${clips[i].id}`,
+      generationStage?.id ?? null,
+      i + 1,
+      { clipId: clips[i].id, stableKey: `runway:${clips[i].id}` },
+      new Set()
+    );
+  }
+  await appendLog(job.id, "info", `${provider.label} generation job created with ${clips.length} clips`);
   const hydrated = await getJob(job.id);
   broadcast(projectId, { type: "job_update", data: hydrated });
   return hydrated;

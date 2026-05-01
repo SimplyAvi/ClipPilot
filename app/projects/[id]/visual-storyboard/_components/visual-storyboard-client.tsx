@@ -50,6 +50,13 @@ type Segment = {
   status: string;
   viewUrl?: string | null;
   variantUrls?: string[];
+  runwayClips?: Array<{
+    id: string;
+    clipId: string;
+    clipIndex: number;
+    status: string;
+    videoUrl: string | null;
+  }>;
   previews?: Preview[];
 };
 
@@ -292,6 +299,7 @@ export function VisualStoryboardClient({ project, initialSegments }: { project: 
             segment={segment}
             index={index}
             total={segments.length}
+            projectId={project.id}
             busyId={busyId}
             testing={testingId === segment.id}
             editingId={editingId}
@@ -388,6 +396,7 @@ function SegmentCard({
   segment,
   index,
   total,
+  projectId,
   busyId,
   testing,
   editingId,
@@ -403,6 +412,7 @@ function SegmentCard({
   segment: Segment;
   index: number;
   total: number;
+  projectId: string;
   busyId: string | null;
   testing: boolean;
   editingId: string | null;
@@ -426,8 +436,8 @@ function SegmentCard({
           <CardTitle className="text-base">Segment {index + 1} of {total}</CardTitle>
           <div className="flex items-center gap-2">
             {approved && <Badge className="bg-green-600">Test Approved</Badge>}
-            {segment.status === "needs_review" && <Badge className="bg-amber-500 text-white">Needs Review</Badge>}
-            {conceptAccepted && !approved && segment.status !== "needs_review" && <Badge variant="secondary">Concept Accepted</Badge>}
+            {conceptAccepted && !approved && <Badge variant="secondary">Concept Approved</Badge>}
+            {segment.status === "needs_review" && <Badge className="bg-amber-500 text-white">Visual Needs Review</Badge>}
             {preview && !approved && preview.status === "complete" && <Badge variant="secondary">Awaiting approval</Badge>}
             <Badge variant="outline">{Math.round(segment.durationSeconds ?? 8)} sec estimate</Badge>
           </div>
@@ -483,10 +493,10 @@ function SegmentCard({
             {segment.status === "needs_review" && (
               <div className="mt-3 rounded-md bg-background p-3 text-sm">
                 <p className="font-medium text-amber-900">Generated visual needs review</p>
-                <p className="mt-1 text-muted-foreground">Approve this visual to use it in the final assembly, or compare/regenerate if it is not right.</p>
+                <p className="mt-1 text-muted-foreground">The concept is already approved. This step approves the generated image that will be sent to Runway.</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button size="sm" onClick={() => patchSegment(segment.id, { status: "generated" })}>
-                    <Check className="mr-2 h-4 w-4" />Approve This Visual
+                    <Check className="mr-2 h-4 w-4" />Approve Generated Visual
                   </Button>
                   {(segment.variantUrls?.length ?? 0) > 1 && (
                     <Button size="sm" variant="outline" onClick={() => setCompareSegment(segment)}>
@@ -552,6 +562,39 @@ function SegmentCard({
             </Button>
           )}
         </div>
+
+        {segment.runwayClips && segment.runwayClips.length > 0 && (
+          <div className="rounded-lg border bg-muted/30 p-3">
+            <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Clips</p>
+            <div className="flex gap-3 overflow-x-auto pb-1">
+              {segment.runwayClips.map((clip) => (
+                <div key={clip.id} className="w-44 shrink-0 rounded-md border bg-background p-2">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium">{clip.clipId.replace(/^sc\d+_/, "")}</span>
+                    <Badge variant={clip.status === "complete" ? "default" : clip.status === "failed" ? "destructive" : "secondary"}>{clip.status}</Badge>
+                  </div>
+                  {clip.videoUrl ? (
+                    <video src={clip.videoUrl} muted loop controls className="aspect-video w-full rounded bg-black" />
+                  ) : (
+                    <div className="flex aspect-video items-center justify-center rounded bg-muted text-xs text-muted-foreground">
+                      {clip.status}
+                    </div>
+                  )}
+                  {clip.status === "failed" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2 w-full text-xs"
+                      onClick={() => fetch(`/api/projects/${projectId}/runway/clips/${clip.clipId}/retry`, { method: "POST" })}
+                    >
+                      Retry Clip
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

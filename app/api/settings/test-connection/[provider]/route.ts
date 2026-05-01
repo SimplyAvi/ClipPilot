@@ -11,6 +11,7 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getProviderKey, markProviderKeyVerified } from "@/lib/provider-keys";
 import { testMubertCredentials } from "@/lib/music/mubert-client";
+import { R2StorageAdapter } from "@/lib/storage/r2-adapter";
 
 async function testAnthropic(): Promise<{ connected: boolean; message: string }> {
   const apiKey = await getProviderKey("anthropic");
@@ -78,6 +79,18 @@ async function testReplicate(): Promise<{ connected: boolean; message: string }>
   }
 }
 
+async function testConfiguredProvider(
+  provider: "kling" | "luma" | "pika" | "minimax",
+  label: string
+): Promise<{ connected: boolean; message: string }> {
+  const key = await getProviderKey(provider);
+  if (!key) return { connected: false, message: `${provider.toUpperCase()} API key is not configured` };
+  return {
+    connected: true,
+    message: `${label} API key is saved. The first real generation request will confirm provider-side permissions.`,
+  };
+}
+
 async function testAudd(): Promise<{ connected: boolean; message: string }> {
   const token = await getProviderKey("audd");
   if (!token) return { connected: false, message: "AUDD_API_TOKEN is not configured" };
@@ -120,9 +133,32 @@ async function testR2(): Promise<{ connected: boolean; message: string }> {
     if (missing.length > 0) {
       return { connected: false, message: `Missing: ${missing.join(", ")}` };
     }
-    return { connected: true, message: "All R2 credentials are configured" };
-  } catch {
-    return { connected: false, message: "Invalid R2 credentials format" };
+    if (creds.R2_ACCESS_KEY_ID.trim().length !== 32) {
+      return {
+        connected: false,
+        message:
+          "R2 Access Key ID should be 32 characters. It looks like the Access Key ID and Secret Access Key may be swapped.",
+      };
+    }
+    const adapter = new R2StorageAdapter({
+      accountId: creds.R2_ACCOUNT_ID,
+      accessKeyId: creds.R2_ACCESS_KEY_ID,
+      secretAccessKey: creds.R2_SECRET_ACCESS_KEY,
+      bucket: creds.R2_BUCKET_NAME,
+      publicBaseUrl: creds.R2_PUBLIC_URL,
+    });
+    await adapter.initProjectFolders();
+    return { connected: true, message: "Connected — R2 bucket is reachable" };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Invalid R2 credentials format";
+    if (message.includes("Credential access key has length")) {
+      return {
+        connected: false,
+        message:
+          "R2 Access Key ID has the wrong length. Check that Access Key ID is in R2_ACCESS_KEY_ID and the longer secret is in R2_SECRET_ACCESS_KEY.",
+      };
+    }
+    return { connected: false, message };
   }
 }
 
@@ -163,6 +199,10 @@ export async function GET(
       case "anthropic":  result = await testAnthropic(); break;
       case "elevenlabs": result = await testElevenLabs(); break;
       case "runway":     result = await testRunway(); break;
+      case "kling":      result = await testConfiguredProvider("kling", "Kling AI"); break;
+      case "luma":       result = await testConfiguredProvider("luma", "Luma Dream Machine"); break;
+      case "pika":       result = await testConfiguredProvider("pika", "Pika"); break;
+      case "minimax":    result = await testConfiguredProvider("minimax", "MiniMax"); break;
       case "replicate":  result = await testReplicate(); break;
       case "audd":       result = await testAudd(); break;
       case "synclabs":   result = await testSyncLabs(); break;

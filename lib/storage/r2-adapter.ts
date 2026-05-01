@@ -10,23 +10,31 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type { StorageAdapter, StoredFile } from "./storage-adapter";
 
+export type R2Config = {
+  accountId: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucket: string;
+  publicBaseUrl?: string;
+};
+
 export class R2StorageAdapter implements StorageAdapter {
   private readonly client: S3Client;
   private readonly bucket: string;
   private readonly publicBaseUrl?: string;
 
-  constructor() {
-    const accountId = process.env.R2_ACCOUNT_ID ?? process.env.CLOUDFLARE_ACCOUNT_ID;
-    const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-    const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-    const bucket = process.env.R2_BUCKET_NAME;
+  constructor(config?: R2Config) {
+    const accountId = config?.accountId ?? process.env.R2_ACCOUNT_ID ?? process.env.CLOUDFLARE_ACCOUNT_ID;
+    const accessKeyId = config?.accessKeyId ?? process.env.R2_ACCESS_KEY_ID;
+    const secretAccessKey = config?.secretAccessKey ?? process.env.R2_SECRET_ACCESS_KEY;
+    const bucket = config?.bucket ?? process.env.R2_BUCKET_NAME;
 
     if (!accountId || !accessKeyId || !secretAccessKey || !bucket) {
       throw new Error("Cloudflare R2 is not fully configured");
     }
 
     this.bucket = bucket;
-    this.publicBaseUrl = process.env.R2_PUBLIC_URL?.replace(/\/$/, "");
+    this.publicBaseUrl = (config?.publicBaseUrl ?? process.env.R2_PUBLIC_URL)?.replace(/\/$/, "");
     this.client = new S3Client({
       region: "auto",
       endpoint: `https://${accountId}.r2.cloudflarestorage.com`,

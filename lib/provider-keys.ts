@@ -19,13 +19,17 @@ import { encryptApiKey, decryptApiKey } from "@/lib/crypto";
 export const PROVIDER_ENV_MAP: Record<string, string | string[]> = {
   anthropic: "ANTHROPIC_API_KEY",
   runway: "RUNWAYML_API_SECRET",
+  kling: "KLING_API_KEY",
+  luma: "LUMA_API_KEY",
+  pika: "PIKA_API_KEY",
+  minimax: "MINIMAX_API_KEY",
   replicate: "REPLICATE_API_TOKEN",
   elevenlabs: "ELEVENLABS_API_KEY",
   mubert: ["MUBERT_COMPANY_ID", "MUBERT_LICENSE_TOKEN", "MUBERT_CUSTOMER_ID", "MUBERT_ACCESS_TOKEN"],
   audd: "AUDD_API_TOKEN",
   synclabs: "SYNCLABS_API_KEY",
   openai: "OPENAI_API_KEY",
-  r2: ["R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET_NAME"],
+  r2: ["R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET_NAME", "R2_PUBLIC_URL"],
 };
 
 export const PROVIDER_NAMES = Object.keys(PROVIDER_ENV_MAP);
@@ -57,6 +61,11 @@ export async function saveProviderKey(
     update: { encryptedKey: encrypted, isVerified: false },
     create: { provider, encryptedKey: encrypted },
   });
+}
+
+export async function deleteProviderKey(provider: string): Promise<number> {
+  const result = await db.providerKey.deleteMany({ where: { provider } });
+  return result.count;
 }
 
 /**

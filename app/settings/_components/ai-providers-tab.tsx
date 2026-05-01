@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ChevronUp,
   ShieldCheck,
+  Trash2,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -73,6 +74,42 @@ const SECTIONS: Section[] = [
         description: "Generating video clips from shot descriptions",
         envVars: ["RUNWAYML_API_SECRET"],
         getKeyHref: "https://app.runwayml.com/",
+      },
+      {
+        id: "kling",
+        name: "Kling AI",
+        initial: "K",
+        color: "bg-sky-600",
+        description: "Image-to-video generation for Kling Standard and Pro providers",
+        envVars: ["KLING_API_KEY"],
+        getKeyHref: "https://klingai.com/docs",
+      },
+      {
+        id: "luma",
+        name: "Luma Dream Machine",
+        initial: "L",
+        color: "bg-cyan-600",
+        description: "Fast image-to-video generation with fluid motion",
+        envVars: ["LUMA_API_KEY"],
+        getKeyHref: "https://lumalabs.ai/dream-machine/api",
+      },
+      {
+        id: "pika",
+        name: "Pika",
+        initial: "P",
+        color: "bg-pink-600",
+        description: "Stylized image-to-video generation for abstract and social-first clips",
+        envVars: ["PIKA_API_KEY"],
+        getKeyHref: "https://pika.art/api",
+      },
+      {
+        id: "minimax",
+        name: "MiniMax Hailuo",
+        initial: "M",
+        color: "bg-emerald-600",
+        description: "Budget-friendly image-to-video generation",
+        envVars: ["MINIMAX_API_KEY"],
+        getKeyHref: "https://www.minimax.io/docs",
       },
       {
         id: "replicate",
@@ -177,6 +214,7 @@ const SECTIONS: Section[] = [
           "R2_ACCESS_KEY_ID",
           "R2_SECRET_ACCESS_KEY",
           "R2_BUCKET_NAME",
+          "R2_PUBLIC_URL",
         ],
         getKeyHref: "https://dash.cloudflare.com/",
       },
@@ -246,12 +284,18 @@ function ProviderCard({
   );
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [saveResult, setSaveResult] = useState<{
     ok: boolean;
     message: string;
   } | null>(null);
   const [testResult, setTestResult] = useState<{
     connected: boolean;
+    message: string;
+  } | null>(null);
+  const [disconnectResult, setDisconnectResult] = useState<{
+    ok: boolean;
     message: string;
   } | null>(null);
 
@@ -339,6 +383,33 @@ function ProviderCard({
     }
   }
 
+  async function handleDisconnect() {
+    setDisconnecting(true);
+    setSaveResult(null);
+    setTestResult(null);
+    setDisconnectResult(null);
+    try {
+      const res = await fetch(`/api/settings/providers/${provider.id}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Could not disconnect provider.");
+      onStatusChange(provider.id, {
+        configured: Boolean(json.data?.stillConfigured),
+        isVerified: false,
+        lastTestedAt: null,
+      });
+      setDisconnectResult({ ok: true, message: json.data?.message ?? "Provider disconnected." });
+      setShowKeyForm(false);
+      setConfirmDisconnect(false);
+    } catch (err) {
+      setDisconnectResult({
+        ok: false,
+        message: err instanceof Error ? err.message : "Could not disconnect provider.",
+      });
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -422,6 +493,8 @@ function ProviderCard({
                 setShowKeyForm((v) => !v);
                 setSaveResult(null);
                 setTestResult(null);
+                setDisconnectResult(null);
+                setConfirmDisconnect(false);
               }}
               className="h-7 text-xs gap-1"
             >
@@ -438,7 +511,7 @@ function ProviderCard({
               size="sm"
               variant="outline"
               onClick={handleTest}
-              disabled={testing || saving}
+              disabled={testing || saving || disconnecting}
               className="h-7 text-xs"
             >
               {testing ? (
@@ -450,6 +523,66 @@ function ProviderCard({
                 "Test connection"
               )}
             </Button>
+
+            {isConfigured && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setConfirmDisconnect(true);
+                  setShowKeyForm(false);
+                  setSaveResult(null);
+                  setTestResult(null);
+                  setDisconnectResult(null);
+                }}
+                disabled={testing || saving || disconnecting}
+                className="h-7 border-destructive/40 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+              >
+                <Trash2 className="mr-1.5 h-3 w-3" />
+                Disconnect
+              </Button>
+            )}
+          </div>
+        )}
+
+        {confirmDisconnect && (
+          <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+            <p className="font-medium">Disconnect {provider.name}?</p>
+            <p className="mt-1 text-destructive/80">
+              This removes the saved credential from ClipPilot. It will not delete files, projects, generated media, or assets already stored with that provider.
+            </p>
+            {provider.id === "r2" && (
+              <p className="mt-1 text-destructive/80">
+                R2 files in Cloudflare are not deleted. If no R2 env vars are set, storage will fall back to local.
+              </p>
+            )}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={handleDisconnect}
+                disabled={disconnecting}
+                className="h-7 text-xs"
+              >
+                {disconnecting ? (
+                  <>
+                    <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                    Disconnecting…
+                  </>
+                ) : (
+                  "Yes, disconnect"
+                )}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setConfirmDisconnect(false)}
+                disabled={disconnecting}
+                className="h-7 text-xs"
+              >
+                Keep connected
+              </Button>
+            </div>
           </div>
         )}
 
@@ -547,6 +680,23 @@ function ProviderCard({
               <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             )}
             {testResult.message}
+          </div>
+        )}
+
+        {disconnectResult && (
+          <div
+            className={`flex items-start gap-2 rounded-md border p-2.5 text-xs ${
+              disconnectResult.ok
+                ? "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-400"
+                : "border-destructive/30 bg-destructive/10 text-destructive"
+            }`}
+          >
+            {disconnectResult.ok ? (
+              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            ) : (
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            )}
+            {disconnectResult.message}
           </div>
         )}
       </CardContent>

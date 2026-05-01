@@ -87,7 +87,7 @@ export class LocalStorageAdapter implements StorageAdapter {
   }
 
   getUrl(relativePath: string): string {
-    return `/api/storage/local?path=${encodeURIComponent(normalizePath(relativePath))}`;
+    return `/api/files/${normalizePath(relativePath).split("/").map(encodeURIComponent).join("/")}`;
   }
 
   async initProjectFolders(projectSlug: string, projectName = projectSlug): Promise<void> {

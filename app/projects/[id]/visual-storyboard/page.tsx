@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { getSignedViewUrl } from "@/lib/storage";
+import { getSignedViewUrl, storage } from "@/lib/storage";
 import { VisualStoryboardClient } from "./_components/visual-storyboard-client";
 
 export default async function VisualStoryboardPage({ params }: { params: { id: string } }) {
@@ -14,6 +14,7 @@ export default async function VisualStoryboardPage({ params }: { params: { id: s
         orderBy: { sortOrder: "asc" },
         include: { previews: { orderBy: { createdAt: "desc" }, take: 3 } },
       },
+      runwayClips: { orderBy: [{ sceneIndex: "asc" }, { clipIndex: "asc" }] },
     },
   });
 
@@ -37,6 +38,15 @@ export default async function VisualStoryboardPage({ params }: { params: { id: s
       previews,
       viewUrl: segment.generatedVideoPath ? await getSignedViewUrl(segment.generatedVideoPath).catch(() => null) : null,
       variantUrls,
+      runwayClips: await Promise.all(project.runwayClips
+        .filter((clip) => clip.sceneIndex === segment.sortOrder)
+        .map(async (clip) => ({
+          id: clip.id,
+          clipId: clip.clipId,
+          clipIndex: clip.clipIndex,
+          status: clip.status,
+          videoUrl: clip.muxedVideoPath ? await storage.getUrl(clip.muxedVideoPath) : clip.videoPath ? await storage.getUrl(clip.videoPath) : null,
+        }))),
     };
   }));
 

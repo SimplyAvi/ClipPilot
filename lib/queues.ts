@@ -9,6 +9,7 @@ export const voiceGenerateQueue = new Queue("voice-generate", { connection: redi
 export const videoAssembleQueue = new Queue("video-assemble", { connection: redisConfig });
 export const contentIdCheckQueue = new Queue("content-id-check", { connection: redisConfig });
 export const sceneGenerateQueue = new Queue("scene-generate", { connection: redisConfig });
+export const runwayGenerationQueue = new Queue("runway-generation", { connection: redisConfig });
 
 export type QueueName =
   | "script-parse"
@@ -17,7 +18,8 @@ export type QueueName =
   | "voice-generate"
   | "video-assemble"
   | "content-id-check"
-  | "scene-generate";
+  | "scene-generate"
+  | "runway-generation";
 
 export const queues: Record<QueueName, Queue> = {
   "script-parse": scriptParseQueue,
@@ -27,4 +29,5 @@ export const queues: Record<QueueName, Queue> = {
   "video-assemble": videoAssembleQueue,
   "content-id-check": contentIdCheckQueue,
   "scene-generate": sceneGenerateQueue,
+  "runway-generation": runwayGenerationQueue,
 };

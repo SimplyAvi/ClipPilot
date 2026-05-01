@@ -1,9 +1,11 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
+import { storage } from "@/lib/storage";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { NextStepBanner } from "@/components/projects/next-step-banner";
+import { RunwayGenerationPanel } from "@/components/runway/runway-generation-panel";
 import {
   ArrowLeft, Clapperboard, Users, Music, ShieldCheck, Upload,
   Captions, Image as ImageIcon, Share2, History, BarChart2,
@@ -35,6 +37,10 @@ export default async function ProjectPage({ params }: { params: { id: string } }
     include: {
       scripts: { orderBy: { createdAt: "desc" }, take: 1 },
       theme: { select: { id: true, name: true } },
+      runwayClips: { orderBy: [{ sceneIndex: "asc" }, { clipIndex: "asc" }] },
+      assembledVideo: true,
+      scenes: { orderBy: { sceneNumber: "asc" } },
+      visualSegments: { orderBy: { sortOrder: "asc" } },
       _count: { select: { scenes: true, assets: true, jobs: true } },
       posts: {
         where: { status: "published" },
@@ -60,6 +66,26 @@ export default async function ProjectPage({ params }: { params: { id: string } }
         .reduce((s, p) => s + p.analytics!.retentionRate!, 0) /
       postsWithAnalytics.filter((p) => p.analytics!.retentionRate != null).length
     : null;
+  const runwayClipCount = estimateRunwayClipCount(project);
+  const runwayClips = await Promise.all(project.runwayClips.map(async (clip) => ({
+    id: clip.id,
+    clipId: clip.clipId,
+    sceneIndex: clip.sceneIndex,
+    clipIndex: clip.clipIndex,
+    durationSeconds: clip.durationSeconds,
+    status: clip.status,
+    videoUrl: clip.muxedVideoPath ? await storage.getUrl(clip.muxedVideoPath) : clip.videoPath ? await storage.getUrl(clip.videoPath) : null,
+  })));
+  const assembledVideo = project.assembledVideo
+    ? {
+        id: project.assembledVideo.id,
+        videoPath: project.assembledVideo.videoPath,
+        videoUrl: await storage.getUrl(project.assembledVideo.videoPath),
+        durationSec: project.assembledVideo.durationSec,
+        status: project.assembledVideo.status,
+      }
+    : null;
+  const sceneDurations = getVideoSourceDurations(project);
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -166,6 +192,20 @@ export default async function ProjectPage({ params }: { params: { id: string } }
         </div>
       )}
 
+      {(runwayClipCount > 0 || runwayClips.length > 0) && (
+        <div className="mb-8">
+          <RunwayGenerationPanel
+            projectId={project.id}
+            initialClipCount={runwayClipCount}
+            initialClips={runwayClips}
+            initialAssembled={assembledVideo}
+            projectVideoProvider={project.videoProvider}
+            projectVideoAspectRatio={project.videoAspectRatio}
+            sceneDurations={sceneDurations}
+          />
+        </div>
+      )}
+
       {/* Performance Summary — shown only when there are published posts */}
       {publishedPosts.length > 0 && (
         <div className="mt-8 rounded-xl border bg-card shadow-sm">
@@ -255,4 +295,39 @@ export default async function ProjectPage({ params }: { params: { id: string } }
       )}
     </div>
   );
+}
+
+function estimateRunwayClipCount(project: {
+  scenes: Array<{ firstImagePath: string | null; durationSeconds: number | null }>;
+  visualSegments: Array<{ generatedVideoPath: string | null; durationSeconds: number | null }>;
+}) {
+  const sceneSources = project.scenes.filter((scene) => scene.firstImagePath);
+  const sources = sceneSources.length > 0
+    ? sceneSources.map((scene) => scene.durationSeconds ?? 8)
+    : project.visualSegments.filter((segment) => segment.generatedVideoPath).map((segment) => segment.durationSeconds ?? 8);
+  return sources.reduce((sum, duration) => sum + splitCount(duration), 0);
+}
+
+function getVideoSourceDurations(project: {
+  scenes: Array<{ firstImagePath: string | null; durationSeconds: number | null }>;
+  visualSegments: Array<{ generatedVideoPath: string | null; durationSeconds: number | null }>;
+}) {
+  const sceneSources = project.scenes.filter((scene) => scene.firstImagePath);
+  const durations = sceneSources.length > 0
+    ? sceneSources.map((scene) => scene.durationSeconds ?? 8)
+    : project.visualSegments.filter((segment) => segment.generatedVideoPath).map((segment) => segment.durationSeconds ?? 8);
+  return durations.map((durationSeconds) => ({ durationSeconds }));
+}
+
+function splitCount(duration: number) {
+  if (duration <= 5) return 1;
+  let remaining = duration;
+  let count = 0;
+  while (remaining > 0) {
+    if (remaining >= 10) remaining -= 10;
+    else if (remaining >= 5) remaining -= 5;
+    else remaining = 0;
+    count += 1;
+  }
+  return count;
 }

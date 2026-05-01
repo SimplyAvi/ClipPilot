@@ -95,6 +95,12 @@ model AppSetting {
   updatedAt DateTime @updatedAt
 }
 
+model AppSettings {
+  id                   String   @id @default("singleton")
+  defaultVideoProvider String   @default("runway")
+  updatedAt            DateTime @updatedAt
+}
+
 // Encrypted provider API keys saved via the Settings UI.
 model ProviderKey {
   id           String    @id @default(cuid())
@@ -134,6 +140,8 @@ model Project {
   themeOverrideMode        String        @default("fill_empty")
   productionMode           String        @default("character_driven")
   variantCount             Int           @default(1)
+  videoProvider            String        @default("runway")
+  videoAspectRatio         String        @default("16:9")
   createdAt                DateTime      @default(now())
   updatedAt                DateTime      @updatedAt
 
@@ -148,6 +156,8 @@ model Project {
   visualSegments    VisualSegment[]
   scenePreviews     ScenePreview[]
   projectMusicTrack ProjectMusicTrack?
+  runwayClips       RunwayClip[]
+  assembledVideo    AssembledVideo?
   thumbnails        ProjectThumbnail[]
   posts             SocialPost[]
   versions          ProjectVersion[]
@@ -301,6 +311,8 @@ model Scene {
   assembledBackend String?
   useProjectTheme  Boolean     @default(true)
   productionMode   String?
+  firstImagePath    String?
+  durationSeconds   Float?
   createdAt        DateTime    @default(now())
 
   project  Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -443,6 +455,49 @@ model ProjectMusicTrack {
   generationPrompt String?  @db.Text
   status           String   @default("pending")
   createdAt        DateTime @default(now())
+}
+
+model RunwayClip {
+  id                String   @id @default(cuid())
+  projectId         String
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  clipId            String
+  sceneIndex        Int
+  clipIndex         Int
+  durationSeconds   Int
+  runwayTaskId      String?
+  status            String   @default("queued")
+  videoPath         String?
+  muxedVideoPath    String?
+  audioPath         String?
+  startImagePath    String
+  endImagePath      String
+  queuePosition     Int?
+  submittedAt       DateTime?
+  generationStart   DateTime?
+  generationEnd     DateTime?
+  downloadEnd       DateTime?
+  muxEnd            DateTime?
+  completedAt       DateTime?
+  costUsd           Float?
+  errorMessage      String?
+  retryCount        Int      @default(0)
+  runwayPollCount   Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([projectId, clipId])
+  @@index([projectId, sceneIndex])
+}
+
+model AssembledVideo {
+  id          String   @id @default(cuid())
+  projectId   String   @unique
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  videoPath   String
+  durationSec Float
+  status      String   @default("pending")
+  createdAt   DateTime @default(now())
 }
 
 model GenerationJob {
