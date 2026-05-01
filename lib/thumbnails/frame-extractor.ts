@@ -12,6 +12,11 @@ import ffmpeg from "fluent-ffmpeg";
 import Anthropic from "@anthropic-ai/sdk";
 import { getProviderKey } from "@/lib/provider-keys";
 
+const ffmpegPath = process.env.FFMPEG_PATH || "/usr/local/bin/ffmpeg";
+const ffprobePath = process.env.FFPROBE_PATH || "/usr/local/bin/ffprobe";
+ffmpeg.setFfmpegPath(ffmpegPath);
+ffmpeg.setFfprobePath(ffprobePath);
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /** Returns the duration of a video in seconds. */

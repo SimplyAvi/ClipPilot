@@ -105,6 +105,17 @@ export default async function ProjectPage({ params }: { params: { id: string } }
           <p className="text-sm text-muted-foreground">
             Created {new Date(project.createdAt).toLocaleDateString()}
           </p>
+          {project.status === "COMPLETE" && project.completedAt && (
+            <p className="text-sm text-muted-foreground">
+              Completed {new Date(project.completedAt).toLocaleString(undefined, {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+              })}
+            </p>
+          )}
           {project.theme && (
             <Link
               href={`/themes/${project.theme.id}`}

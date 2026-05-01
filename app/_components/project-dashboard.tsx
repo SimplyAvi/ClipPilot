@@ -100,6 +100,16 @@ function relativeTime(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString();
 }
 
+function completedDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 function getPlatformLabel(project: DashboardProject): string {
   if (project.platform) return PLATFORM_LABELS[project.platform] ?? project.platform;
   const exp = project.exports[0];
@@ -586,7 +596,9 @@ export default function ProjectDashboard({ initialProjects, thumbnailUrls, quick
                   <div className="mt-1 flex items-center justify-between">
                     <StatusBadge status={p.status} />
                     <span className="text-xs text-muted-foreground">
-                      {relativeTime(p.updatedAt)}
+                      {p.status === "COMPLETE" && p.completedAt
+                        ? `Done ${completedDate(p.completedAt)}`
+                        : relativeTime(p.updatedAt)}
                     </span>
                   </div>
                   {getPlatformLabel(p) !== "—" && (
@@ -746,7 +758,9 @@ export default function ProjectDashboard({ initialProjects, thumbnailUrls, quick
                         )}
                         <span className="flex items-center gap-1 ml-auto">
                           <Clock className="h-3 w-3" />
-                          {relativeTime(p.updatedAt)}
+                          {p.status === "COMPLETE" && p.completedAt
+                            ? `Done ${completedDate(p.completedAt)}`
+                            : relativeTime(p.updatedAt)}
                         </span>
                       </div>
                     </div>

@@ -164,6 +164,14 @@ export function RunwayGenerationPanel({
         {assembled?.videoUrl && (
           <div className="overflow-hidden rounded-lg border bg-black">
             <video controls className="aspect-video w-full" src={assembled.videoUrl} />
+            <div className="border-t border-white/10 bg-background p-3">
+              <Button variant="outline" asChild>
+                <a href={assembled.videoUrl} download>
+                  <Download className="mr-2 h-4 w-4" />
+                  Download Final Video
+                </a>
+              </Button>
+            </div>
           </div>
         )}
       </CardHeader>

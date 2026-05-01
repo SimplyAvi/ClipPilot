@@ -6,6 +6,7 @@ import { storage } from "@/lib/storage";
 import { slugify } from "@/lib/storage/naming";
 import { broadcast } from "@/lib/generation/sse-broadcaster";
 import { cleanupDir, ffmpegRun, ffprobeDuration, loadFfmpeg, materializeStorageFile, saveLocalFile } from "@/lib/runway/utils";
+import { extractBestFrame } from "@/lib/thumbnails/frame-extractor";
 
 export async function assembleProject(projectId: string): Promise<string> {
   const project = await db.project.findUnique({
@@ -58,6 +59,7 @@ export async function assembleProject(projectId: string): Promise<string> {
       update: { videoPath: storedPath, durationSec: duration, status: "complete" },
       create: { projectId, videoPath: storedPath, durationSec: duration, status: "complete" },
     });
+    await finalizeCompletedProject(projectId, projectSlug, output);
 
     const videoUrl = await storage.getUrl(storedPath);
     broadcast(projectId, { type: "assembly_complete", data: { projectId, videoUrl, videoPath: storedPath } });
@@ -65,6 +67,43 @@ export async function assembleProject(projectId: string): Promise<string> {
   } finally {
     cleanupDir(tmpDir);
   }
+}
+
+async function finalizeCompletedProject(projectId: string, projectSlug: string, finalVideoLocalPath: string): Promise<void> {
+  const completedAt = new Date();
+  const thumbnailPath = await saveFinalVideoThumbnail(projectId, projectSlug, finalVideoLocalPath).catch((err) => {
+    console.warn("[runway-assembler] Could not create final video thumbnail:", err instanceof Error ? err.message : err);
+    return null;
+  });
+
+  await db.project.update({
+    where: { id: projectId },
+    data: {
+      status: "COMPLETE",
+      completedAt,
+      ...(thumbnailPath ? { thumbnailPath } : {}),
+    },
+  });
+}
+
+async function saveFinalVideoThumbnail(
+  projectId: string,
+  projectSlug: string,
+  finalVideoLocalPath: string
+): Promise<string> {
+  const bestFrame = await extractBestFrame(finalVideoLocalPath);
+  const thumbnailStoragePath = `${projectSlug}/06_thumbnails/thumbnail_final_video_selected.jpg`;
+  const storedPath = await saveLocalFile(thumbnailStoragePath, bestFrame, "image/jpeg", {
+    projectId,
+    source: "final-video",
+    selector: "ai-best-frame",
+  });
+
+  if (bestFrame !== finalVideoLocalPath && path.basename(bestFrame).startsWith("frame-")) {
+    cleanupDir(path.dirname(bestFrame));
+  }
+
+  return storedPath;
 }
 
 async function ensureAudioStream(localVideoPath: string, tmpDir: string, clipId: string): Promise<string> {
