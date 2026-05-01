@@ -90,6 +90,14 @@ async function processRunwayGeneration(job: Job<RunwayGenerationJob>) {
     if (task) await startTask(task.id);
 
     try {
+      const existing = await db.runwayClip.findUnique({
+        where: { projectId_clipId: { projectId, clipId: clip.id } },
+        select: { videoPath: true, muxedVideoPath: true },
+      });
+      if (existing?.muxedVideoPath || existing?.videoPath) {
+        if (task) await completeTask(task.id, 0, 0);
+        continue;
+      }
       await db.runwayClip.upsert({
         where: { projectId_clipId: { projectId, clipId: clip.id } },
         update: {
@@ -125,6 +133,7 @@ async function processRunwayGeneration(job: Job<RunwayGenerationJob>) {
       runwayBroadcast(projectId, { type: "clip_submitting", clipId: clip.id });
 
       if (task) await updateTaskProgress(task.id, 10, `Preparing ${clip.id} start and end frames`);
+      await ensureContinuityStartFrame(projectId, clip);
       const promptImage = await getAbsoluteStorageUrl(clip.startImagePath);
       const promptImageEndPath = await storage.exists(clip.endImagePath) ? clip.endImagePath : clip.startImagePath;
       const promptImageEnd = await getAbsoluteStorageUrl(promptImageEndPath);
@@ -144,7 +153,7 @@ async function processRunwayGeneration(job: Job<RunwayGenerationJob>) {
       runwayBroadcast(projectId, { type: "clip_generating", clipId: clip.id, runwayTaskId, pollCount: 0, elapsedMs: 0 });
 
       if (task) await updateTaskProgress(task.id, 35, `Waiting for ${providerConfig.label} task ${runwayTaskId}`);
-      const result = await pollProviderTask(adapter, projectId, clip.id, runwayTaskId);
+      const result = await pollProviderTask(adapter, projectId, generationJobId, clip.id, runwayTaskId);
       if (task) await updateTaskProgress(task.id, 70, `${providerConfig.label} task finished`);
       if (result.status !== "succeeded" || !result.outputUrl) {
         throw new Error(result.error ?? `${providerConfig.label} clip failed`);
@@ -216,6 +225,7 @@ async function processRunwayGeneration(job: Job<RunwayGenerationJob>) {
       if (task) await completeTask(task.id, costUsd, (Date.now() - startedAt) / 1000);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Runway clip generation failed";
+      const cancelled = await isGenerationCancelled(generationJobId);
       const failed = await db.runwayClip.update({
         where: { projectId_clipId: { projectId, clipId: clip.id } },
         data: { status: "failed", errorMessage: message, retryCount: { increment: 1 } },
@@ -228,11 +238,29 @@ async function processRunwayGeneration(job: Job<RunwayGenerationJob>) {
         retryable: (failed?.retryCount ?? 1) < 3,
         retryCount: failed?.retryCount ?? 1,
       });
+      if (cancelled) {
+        await appendLog(generationJobId, "warning", "Runway generation stopped by user.");
+        break;
+      }
       if (task) await failTask(task.id, message);
       await appendLog(generationJobId, "error", `${clip.id} failed: ${message}`);
+      await db.generationJob.update({
+        where: { id: generationJobId },
+        data: {
+          status: "failed",
+          currentStageLabel: `${clip.id} failed - generation stopped`,
+          isPauseRequested: true,
+        },
+      }).catch(() => undefined);
+      break;
     }
   }
 
+  const failedBeforeAssembly = await db.runwayClip.findFirst({ where: { projectId, status: "failed" } });
+  if (failedBeforeAssembly) {
+    await appendLog(generationJobId, "warning", "Runway generation stopped because a clip failed.");
+    return;
+  }
   if (stage) await completeTask(stage.id, 0, 0.1);
   if (job.data.assembleWhenComplete !== false) {
     if (await isGenerationCancelled(generationJobId)) {
@@ -271,6 +299,20 @@ async function processRunwayGeneration(job: Job<RunwayGenerationJob>) {
   }
 }
 
+async function ensureContinuityStartFrame(projectId: string, clip: ClipSpec): Promise<void> {
+  if (clip.clipIndex === 0 || await storage.exists(clip.startImagePath)) return;
+  const previousClipId = `sc${pad2(clip.sceneIndex + 1)}_clip${clip.clipIndex}`;
+  const previousClip = await db.runwayClip.findUnique({
+    where: { projectId_clipId: { projectId, clipId: previousClipId } },
+    select: { videoPath: true, muxedVideoPath: true },
+  });
+  const sourceVideo = previousClip?.videoPath ?? previousClip?.muxedVideoPath;
+  if (!sourceVideo) {
+    throw new Error(`Missing continuity frame for ${clip.id}: ${clip.startImagePath}`);
+  }
+  await extractLastFrame(sourceVideo, clip.startImagePath);
+}
+
 async function isGenerationCancelled(generationJobId: string): Promise<boolean> {
   const generationJob = await db.generationJob.findUnique({
     where: { id: generationJobId },
@@ -282,11 +324,15 @@ async function isGenerationCancelled(generationJobId: string): Promise<boolean> 
 async function pollProviderTask(
   adapter: ReturnType<typeof getVideoProvider>,
   projectId: string,
+  generationJobId: string,
   clipId: string,
   providerTaskId: string
 ) {
   const started = Date.now();
   while (Date.now() - started < 5 * 60 * 1000) {
+    if (await isGenerationCancelled(generationJobId)) {
+      return { status: "failed" as const, error: "Cancelled by user." };
+    }
     const result = await adapter.poll(providerTaskId);
     const row = await db.runwayClip.update({
       where: { projectId_clipId: { projectId, clipId } },

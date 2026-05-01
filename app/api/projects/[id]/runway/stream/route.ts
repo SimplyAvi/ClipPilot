@@ -47,20 +47,23 @@ async function getSnapshot(projectId: string): Promise<RunwayClipSummary[]> {
   });
 
   return Promise.all(
-    clips.map(async (clip) => ({
-      clipId: clip.clipId,
-      sceneIndex: clip.sceneIndex,
-      clipIndex: clip.clipIndex,
-      status: normalizeStatus(clip.status),
-      durationSeconds: clip.durationSeconds,
-      queuePosition: clip.queuePosition ?? undefined,
-      runwayTaskId: clip.runwayTaskId ?? undefined,
-      videoUrl: clip.muxedVideoPath ? await storage.getUrl(clip.muxedVideoPath) : clip.videoPath ? await storage.getUrl(clip.videoPath) : undefined,
-      costUsd: clip.costUsd ?? undefined,
-      errorMessage: clip.errorMessage ?? undefined,
-      retryCount: clip.retryCount,
-      elapsedMs: clip.status === "generating" && clip.generationStart ? Date.now() - clip.generationStart.getTime() : undefined,
-    }))
+    clips.map(async (clip) => {
+      const videoUrl = clip.muxedVideoPath ? await storage.getUrl(clip.muxedVideoPath) : clip.videoPath ? await storage.getUrl(clip.videoPath) : undefined;
+      return {
+        clipId: clip.clipId,
+        sceneIndex: clip.sceneIndex,
+        clipIndex: clip.clipIndex,
+        status: videoUrl ? "complete" : normalizeStatus(clip.status),
+        durationSeconds: clip.durationSeconds,
+        queuePosition: clip.queuePosition ?? undefined,
+        runwayTaskId: clip.runwayTaskId ?? undefined,
+        videoUrl,
+        costUsd: clip.costUsd ?? undefined,
+        errorMessage: clip.errorMessage ?? undefined,
+        retryCount: clip.retryCount,
+        elapsedMs: clip.status === "generating" && clip.generationStart ? Date.now() - clip.generationStart.getTime() : undefined,
+      };
+    })
   );
 }
 

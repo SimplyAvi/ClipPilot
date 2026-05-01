@@ -12,11 +12,13 @@ export function RunwayTestButton({
   providerId = "runway",
   providerLabel = "Runway",
   aspectRatio = "16:9",
+  onComplete,
 }: {
   projectId: string;
   providerId?: string;
   providerLabel?: string;
   aspectRatio?: VideoAspectRatio;
+  onComplete?: () => void | Promise<void>;
 }) {
   const [state, setState] = useState<TestState>("idle");
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -57,6 +59,7 @@ export function RunwayTestButton({
       }
       setVideoUrl(data.videoUrl);
       setState("done");
+      await onComplete?.();
     } catch (err) {
       clearInterval(timer);
       setError(err instanceof Error ? err.message : "Unknown Runway error");

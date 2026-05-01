@@ -129,7 +129,7 @@ function SceneGroup({
   clips: RunwayClipSummary[];
   onRetry: (clipId: string) => void;
 }) {
-  const complete = clips.filter((clip) => clip.status === "complete").length;
+  const complete = clips.filter(isClipComplete).length;
   const pct = clips.length > 0 ? (complete / clips.length) * 100 : 0;
 
   return (
@@ -151,15 +151,16 @@ function SceneGroup({
 }
 
 function ClipRow({ clip, onRetry }: { clip: RunwayClipSummary; onRetry: (clipId: string) => void }) {
-  const config = STATUS_CONFIG[clip.status];
+  const displayStatus = isClipComplete(clip) ? "complete" : clip.status;
+  const config = STATUS_CONFIG[displayStatus];
 
   return (
     <div
       className={cn(
         "flex flex-col gap-3 rounded-lg border p-3 transition md:flex-row md:items-center",
-        clip.status === "generating" && "border-amber-300 bg-amber-50/40",
-        clip.status === "complete" && "border-green-300 bg-green-50/40",
-        clip.status === "failed" && "border-red-300 bg-red-50/40"
+        displayStatus === "generating" && "border-amber-300 bg-amber-50/40",
+        displayStatus === "complete" && "border-green-300 bg-green-50/40",
+        displayStatus === "failed" && "border-red-300 bg-red-50/40"
       )}
     >
       <div className="w-32 shrink-0">
@@ -171,14 +172,16 @@ function ClipRow({ clip, onRetry }: { clip: RunwayClipSummary; onRetry: (clipId:
 
       <span className={cn("inline-flex w-32 shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-medium", config.className)}>
         {config.animate && <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />}
-        {config.label}
+        {displayStatus === "queued" && !clip.queuePosition ? "Planned" : config.label}
       </span>
 
       <div className="min-w-0 flex-1">
-        {clip.status === "queued" && (
-          <p className="text-xs text-muted-foreground">Position #{clip.queuePosition ?? "-"} in queue</p>
+        {displayStatus === "queued" && (
+          <p className="text-xs text-muted-foreground">
+            {clip.queuePosition ? `Position #${clip.queuePosition} in queue` : "Waiting to be started"}
+          </p>
         )}
-        {clip.status === "generating" && (
+        {displayStatus === "generating" && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-xs text-amber-700">{formatElapsed(clip.elapsedMs ?? 0)}</span>
             {clip.runwayTaskId && (
@@ -188,33 +191,41 @@ function ClipRow({ clip, onRetry }: { clip: RunwayClipSummary; onRetry: (clipId:
             )}
           </div>
         )}
-        {(clip.status === "submitting" || clip.status === "downloading" || clip.status === "muxing") && (
+        {(displayStatus === "submitting" || displayStatus === "downloading" || displayStatus === "muxing") && (
           <div className="h-1.5 overflow-hidden rounded-full bg-muted">
             <div className="h-full w-1/3 animate-pulse rounded-full bg-primary/70" />
           </div>
         )}
-        {clip.status === "complete" && clip.videoUrl && (
-          <video
-            src={clip.videoUrl}
-            className="h-12 w-20 rounded bg-black object-cover"
-            muted
-            loop
-            playsInline
-            onMouseEnter={(event) => event.currentTarget.play()}
-            onMouseLeave={(event) => {
-              event.currentTarget.pause();
-              event.currentTarget.currentTime = 0;
-            }}
-          />
+        {displayStatus === "complete" && clip.videoUrl && (
+          <div className="flex flex-wrap items-center gap-2">
+            <video
+              src={clip.videoUrl}
+              className="h-12 w-20 rounded bg-black object-cover"
+              muted
+              loop
+              playsInline
+              onMouseEnter={(event) => event.currentTarget.play()}
+              onMouseLeave={(event) => {
+                event.currentTarget.pause();
+                event.currentTarget.currentTime = 0;
+              }}
+            />
+            <Button size="sm" variant="outline" className="h-8" asChild>
+              <a href={clip.videoUrl} download={`${clip.clipId}.mp4`}>
+                <Download className="mr-2 h-3.5 w-3.5" />
+                Download
+              </a>
+            </Button>
+          </div>
         )}
-        {clip.status === "failed" && (
+        {displayStatus === "failed" && (
           <p className="truncate text-xs text-red-700">{clip.errorMessage ?? "Clip generation failed"}</p>
         )}
       </div>
 
       {clip.costUsd != null && <span className="font-mono text-xs text-muted-foreground">${clip.costUsd.toFixed(2)}</span>}
 
-      {clip.status === "failed" && clip.retryCount < 3 && (
+      {displayStatus === "failed" && clip.retryCount < 3 && (
         <Button size="sm" variant="outline" className="h-8 shrink-0" onClick={() => onRetry(clip.clipId)}>
           <RefreshCw className="mr-2 h-3.5 w-3.5" />
           Retry
@@ -222,6 +233,10 @@ function ClipRow({ clip, onRetry }: { clip: RunwayClipSummary; onRetry: (clipId:
       )}
     </div>
   );
+}
+
+function isClipComplete(clip: RunwayClipSummary) {
+  return clip.status === "complete" || Boolean(clip.videoUrl);
 }
 
 function formatElapsed(ms: number): string {
@@ -235,4 +250,3 @@ function formatRemaining(seconds: number | null): string {
   if (seconds < 60) return `~${seconds}s`;
   return `~${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
-

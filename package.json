@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "workers": "ts-node -r tsconfig-paths/register --project tsconfig.workers.json workers/start.ts",
     "test": "vitest run",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",

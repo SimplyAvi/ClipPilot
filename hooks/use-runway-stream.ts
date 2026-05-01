@@ -15,7 +15,7 @@ interface RunwayStreamState {
   assembledVideoUrl: string | null;
 }
 
-const ACTIVE_STATUSES = new Set(["queued", "submitting", "generating", "downloading", "muxing"]);
+const ACTIVE_STATUSES = new Set(["submitting", "generating", "downloading", "muxing"]);
 
 export function useRunwayStream(projectId: string) {
   const [state, setState] = useState<RunwayStreamState>({
@@ -62,6 +62,42 @@ export function useRunwayStream(projectId: string) {
   }, [projectId]);
 
   useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+
+    async function refreshFromDatabase() {
+      try {
+        const response = await fetch(`/api/projects/${projectId}/runway/clips`, { cache: "no-store" });
+        if (!response.ok) return;
+        const json = await response.json();
+        if (cancelled) return;
+        setState((prev) => reduceRunwayEvent(prev, {
+          type: "queue_snapshot",
+          clips: (json.data?.clips ?? []).map(toClipSummary),
+        }, completionTimesMs.current));
+        if (json.data?.assembled?.videoUrl) {
+          setState((prev) => ({
+            ...prev,
+            isAssembling: false,
+            isComplete: true,
+            isGenerating: false,
+            assembledVideoUrl: json.data.assembled.videoUrl,
+          }));
+        }
+      } catch {
+        // SSE is primary when available; polling is a quiet cross-process fallback.
+      }
+    }
+
+    refreshFromDatabase();
+    const interval = setInterval(refreshFromDatabase, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [projectId]);
+
+  useEffect(() => {
     const interval = setInterval(() => {
       setState((prev) => {
         let changed = false;
@@ -85,7 +121,7 @@ export function useRunwayStream(projectId: string) {
       ),
     [state.clips]
   );
-  const completedCount = clipList.filter((clip) => clip.status === "complete").length;
+  const completedCount = clipList.filter(isClipComplete).length;
   const totalCount = clipList.length;
 
   return { ...state, clipList, completedCount, totalCount };
@@ -108,7 +144,7 @@ function reduceRunwayEvent(
         totalCostSoFar: clipList.reduce((sum, clip) => sum + (clip.costUsd ?? 0), 0),
         estimatedTotalCost: estimateTotalCost(clipList),
         isGenerating: clipList.some((clip) => ACTIVE_STATUSES.has(clip.status)),
-        isComplete: clipList.length > 0 && clipList.every((clip) => clip.status === "complete"),
+        isComplete: clipList.length > 0 && clipList.every(isClipComplete),
       };
     }
     case "clip_queued":
@@ -150,7 +186,7 @@ function reduceRunwayEvent(
       };
       completionTimesMs.push(elapsed);
       if (completionTimesMs.length > 5) completionTimesMs.shift();
-      const remaining = Object.values(clips).filter((clip) => clip.status !== "complete" && clip.status !== "failed").length;
+      const remaining = Object.values(clips).filter((clip) => !isClipComplete(clip) && clip.status !== "failed").length;
       const averageMs = completionTimesMs.reduce((sum, ms) => sum + ms, 0) / completionTimesMs.length;
       return {
         ...prev,
@@ -188,9 +224,65 @@ function reduceRunwayEvent(
 
 function estimateTotalCost(clips: RunwayClipSummary[]) {
   const runway = getProviderConfig("runway");
-  return clips.reduce((sum, clip) => sum + (clip.costUsd ?? runway.pricing[clip.durationSeconds] ?? 0), 0);
+  return clips.reduce((sum, clip) => {
+    if (isClipComplete(clip)) return sum + (clip.costUsd ?? 0);
+    return sum + (runway.pricing[clip.durationSeconds] ?? 0);
+  }, 0);
 }
 
 function defaultClipMs(durationSeconds?: number) {
   return durationSeconds === 10 ? 90_000 : 60_000;
+}
+
+function isClipComplete(clip: RunwayClipSummary) {
+  return clip.status === "complete" || Boolean(clip.videoUrl);
+}
+
+function toClipSummary(clip: {
+  clipId: string;
+  sceneIndex: number;
+  clipIndex: number;
+  status: string;
+  durationSeconds: number;
+  queuePosition?: number | null;
+  runwayTaskId?: string | null;
+  videoUrl?: string | null;
+  costUsd?: number | null;
+  errorMessage?: string | null;
+  retryCount?: number | null;
+  generationStart?: string | Date | null;
+}): RunwayClipSummary {
+  const videoUrl = clip.videoUrl ?? undefined;
+  const status = videoUrl ? "complete" : normalizeClipStatus(clip.status);
+  return {
+    clipId: clip.clipId,
+    sceneIndex: clip.sceneIndex,
+    clipIndex: clip.clipIndex,
+    status,
+    durationSeconds: clip.durationSeconds,
+    queuePosition: clip.queuePosition ?? undefined,
+    runwayTaskId: clip.runwayTaskId ?? undefined,
+    videoUrl,
+    costUsd: clip.costUsd ?? undefined,
+    errorMessage: clip.errorMessage ?? undefined,
+    retryCount: clip.retryCount ?? 0,
+    elapsedMs: status === "generating" && clip.generationStart
+      ? Date.now() - new Date(clip.generationStart).getTime()
+      : undefined,
+  };
+}
+
+function normalizeClipStatus(status: string): RunwayClipSummary["status"] {
+  if (
+    status === "queued" ||
+    status === "submitting" ||
+    status === "generating" ||
+    status === "downloading" ||
+    status === "muxing" ||
+    status === "complete" ||
+    status === "failed"
+  ) {
+    return status;
+  }
+  return status === "pending" ? "queued" : "failed";
 }

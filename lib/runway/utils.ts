@@ -14,9 +14,15 @@ export function runwayProjectPath(projectSlug: string, suffix: string): string {
 }
 
 export async function materializeStorageFile(storagePath: string, suffix = path.extname(storagePath)) {
+  await ensureR2ObjectFromLocal(storagePath, { requestedBy: "runway-materialize" }).catch(() => undefined);
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "clippilot-runway-"));
   const localPath = path.join(tmpDir, `input${suffix || ".bin"}`);
-  fs.writeFileSync(localPath, await storage.read(storagePath));
+  const url = await storage.getUrl(storagePath).catch(() => "");
+  if (/^https?:\/\//i.test(url)) {
+    fs.writeFileSync(localPath, await fetchBuffer(url));
+  } else {
+    fs.writeFileSync(localPath, await storage.read(storagePath));
+  }
   return { tmpDir, localPath };
 }
 
@@ -42,7 +48,14 @@ export function loadFfmpeg() {
 
 export function ffmpegRun(command: any): Promise<void> {
   return new Promise((resolve, reject) => {
-    command.on("end", () => resolve()).on("error", reject).run();
+    let settled = false;
+    const finish = (err?: Error) => {
+      if (settled) return;
+      settled = true;
+      if (err) reject(err);
+      else resolve();
+    };
+    command.on("end", () => finish()).on("error", finish).run();
   });
 }
 
@@ -66,4 +79,21 @@ export async function getAbsoluteStorageUrl(storagePath: string): Promise<string
     process.env.APP_BASE_URL ||
     "http://localhost:3001";
   return `${base.replace(/\/$/, "")}${url.startsWith("/") ? url : `/${url}`}`;
+}
+
+async function fetchBuffer(url: string): Promise<Buffer> {
+  const fetchImpl = globalThis.fetch ?? require("node-fetch");
+  const response = await fetchImpl(url);
+  if (!response.ok) throw new Error(`Could not download storage file (${response.status}) from ${url}`);
+  if (typeof response.arrayBuffer === "function") {
+    return Buffer.from(await response.arrayBuffer());
+  }
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const body = response.body as NodeJS.ReadableStream | null;
+    if (!body) return reject(new Error(`Empty response body from ${url}`));
+    body.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
+    body.on("error", reject);
+    body.on("end", () => resolve(Buffer.concat(chunks)));
+  });
 }

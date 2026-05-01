@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useGenerationStream } from "@/hooks/use-generation-stream";
+import { useRunwayStream } from "@/hooks/use-runway-stream";
 import { RunwayQueuePanel } from "@/components/runway/runway-queue-panel";
 import { RunwayTestButton } from "@/components/runway/runway-test-button";
 import { AspectRatioSelector } from "@/components/video-providers/aspect-ratio-selector";
@@ -62,10 +63,15 @@ export function RunwayGenerationPanel({
   const [error, setError] = useState<string | null>(null);
   const [streamKey, setStreamKey] = useState(0);
   const { job } = useGenerationStream(projectId);
+  const runwayStream = useRunwayStream(projectId);
   const provider = getProviderConfig(providerId);
 
-  const completed = clips.filter((clip) => clip.status === "complete").length;
-  const running = job?.status === "running" || job?.status === "queued";
+  const progressClips = runwayStream.clipList.length > 0 ? runwayStream.clipList : clips;
+  const hasActiveRunwayClip = progressClips.some((clip) =>
+    ["queued", "submitting", "generating", "downloading", "muxing"].includes(clip.status) && !isComplete(clip)
+  );
+  const running = job?.status === "running" || job?.status === "queued" || runwayStream.isGenerating || hasActiveRunwayClip;
+  const queuedButIdle = job?.status === "queued" && !runwayStream.isGenerating;
   const estimatedClipCount = clips.length || initialClipCount;
   const estimatedMinutes = Math.max(1, Math.ceil((estimatedClipCount * 45) / 60));
 
@@ -169,14 +175,35 @@ export function RunwayGenerationPanel({
               Run one quick test to confirm {provider.label} is connected and your public scene image URLs render correctly.
             </p>
           </div>
-          <RunwayTestButton projectId={projectId} providerId={providerId} providerLabel={provider.label} aspectRatio={aspectRatio} />
+          <RunwayTestButton
+            projectId={projectId}
+            providerId={providerId}
+            providerLabel={provider.label}
+            aspectRatio={aspectRatio}
+            onComplete={refreshClips}
+          />
         </div>
 
         <div className="border-t" />
 
         <ProviderSelector value={providerId} onChange={setProviderId} configuredProviders={configuredProviders} />
         <AspectRatioSelector value={aspectRatio} onChange={setAspectRatio} />
-        <CostEstimator providerId={providerId} scenes={sceneDurations.length > 0 ? sceneDurations : [{ durationSeconds: 5 }]} />
+        <CostEstimator
+          providerId={providerId}
+          scenes={sceneDurations.length > 0 ? sceneDurations : [{ durationSeconds: 5 }]}
+          plannedClips={progressClips}
+        />
+
+        <SceneProgressStrip clips={progressClips} estimatedSceneCount={sceneDurations.length} />
+
+        {queuedButIdle && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            <p className="font-semibold">Generation is queued, but no clip is running yet.</p>
+            <p className="mt-1 text-xs">
+              The next clip will start when the Redis/BullMQ worker is online. If this stays here, start Redis and the worker, then click Start again or resume the queued job.
+            </p>
+          </div>
+        )}
 
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
           <div className="flex flex-wrap gap-2">
@@ -219,6 +246,108 @@ export function RunwayGenerationPanel({
       </CardContent>
     </Card>
   );
+}
+
+function SceneProgressStrip({
+  clips,
+  estimatedSceneCount,
+}: {
+  clips: SceneProgressClip[];
+  estimatedSceneCount: number;
+}) {
+  const grouped = clips.reduce<Record<number, SceneProgressClip[]>>((acc, clip) => {
+    acc[clip.sceneIndex] ??= [];
+    acc[clip.sceneIndex].push(clip);
+    return acc;
+  }, {});
+  const sceneIndexes = Object.keys(grouped).map(Number).sort((a, b) => a - b);
+
+  if (sceneIndexes.length === 0) {
+    return (
+      <div className="rounded-lg border bg-muted/20 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-sm font-semibold">Scene progress will appear here</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              After you start generation, each scene shows its queued, active, completed, and failed clips.
+            </p>
+          </div>
+          {estimatedSceneCount > 0 && (
+            <Badge variant="outline">{estimatedSceneCount} scenes planned</Badge>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border bg-muted/20 p-4">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-semibold">Scene generation progress</p>
+          <p className="text-xs text-muted-foreground">Each scene updates as its clips move through the provider queue.</p>
+        </div>
+        <Badge variant="secondary">{sceneIndexes.length} scenes</Badge>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        {sceneIndexes.map((sceneIndex) => (
+          <SceneProgressCard key={sceneIndex} sceneIndex={sceneIndex} clips={grouped[sceneIndex]} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SceneProgressCard({ sceneIndex, clips }: { sceneIndex: number; clips: SceneProgressClip[] }) {
+  const complete = clips.filter((clip) => isComplete(clip)).length;
+  const failed = clips.filter((clip) => clip.status === "failed").length;
+  const active = clips.find((clip) => ["submitting", "generating", "downloading", "muxing"].includes(clip.status));
+  const pct = clips.length > 0 ? Math.round((complete / clips.length) * 100) : 0;
+
+  return (
+    <div className="rounded-md border bg-background p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <p className="text-sm font-semibold">Scene {sceneIndex + 1}</p>
+        <span className="text-xs text-muted-foreground">{complete}/{clips.length} clips</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-muted">
+        <div
+          className={failed > 0 ? "h-full rounded-full bg-red-500" : "h-full rounded-full bg-green-500"}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        {failed > 0
+          ? `${failed} failed - retry from the queue below`
+            : active
+              ? `${labelForStatus(active.status)} ${active.clipId}`
+            : complete === clips.length
+              ? "Scene complete"
+              : `${clips.length - complete} clip${clips.length - complete === 1 ? "" : "s"} waiting`}
+      </p>
+    </div>
+  );
+}
+
+type SceneProgressClip = {
+  clipId: string;
+  sceneIndex: number;
+  clipIndex: number;
+  durationSeconds: number;
+  status: string;
+  videoUrl?: string | null;
+};
+
+function isComplete(clip: SceneProgressClip) {
+  return clip.status === "complete" || Boolean(clip.videoUrl);
+}
+
+function labelForStatus(status: string) {
+  if (status === "submitting") return "Submitting";
+  if (status === "generating") return "Generating";
+  if (status === "downloading") return "Downloading";
+  if (status === "muxing") return "Adding audio to";
+  return "Working on";
 }
 
 function normalizeAspectRatio(value?: string | null): VideoAspectRatio {
